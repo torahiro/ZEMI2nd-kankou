@@ -1,0 +1,567 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>旅先マッチング - 旅行タイプ診断 & シミュレーター</title>
+    <style>
+        /* 共通スタイル & ベース */
+        body {
+            font-family: 'Helvetica Neue', Arial, "Hiragino Kaku Gothic ProN", "Hiragino Sans", Meiryo, sans-serif;
+            padding: 40px 20px;
+            background-color: #f5f7fa;
+            color: #333;
+            margin: 0;
+            line-height: 1.6;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        header {
+            text-align: center;
+            margin-bottom: 40px;
+        }
+        h1 {
+            color: #2b5c8f;
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+        }
+        .subtitle {
+            color: #64748b;
+            font-size: 1.1rem;
+        }
+
+        /* 2カラムレイアウト（設定エリアと結果エリア） */
+        .main-layout {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 30px;
+        }
+        @media (min-width: 900px) {
+            .main-layout {
+                grid-template-columns: 400px 1fr;
+            }
+        }
+
+        /* 設定パネル（スライダー ＆ チェックボックス） */
+        .config-panel {
+            background: white;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+            height: fit-content;
+        }
+        .section {
+            margin-bottom: 30px;
+        }
+        h2 {
+            font-size: 1.1rem;
+            margin-bottom: 15px;
+            color: #2b5c8f;
+            border-left: 4px solid #2b5c8f;
+            padding-left: 10px;
+        }
+        .display-value {
+            font-size: 2rem;
+            font-weight: bold;
+            color: #007aff;
+            margin-bottom: 15px;
+            text-align: center;
+        }
+        .slider {
+            -webkit-appearance: none;
+            width: 100%;
+            height: 8px;
+            border-radius: 4px;
+            background: #e4e7eb;
+            outline: none;
+        }
+        .slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            background: #007aff;
+            cursor: pointer;
+            transition: transform 0.1s;
+        }
+        .slider::-webkit-slider-thumb:hover {
+            transform: scale(1.2);
+        }
+        .labels {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 8px;
+            color: #999;
+            font-size: 0.85rem;
+        }
+        hr {
+            border: 0;
+            border-top: 1px solid #eee;
+            margin: 25px 0;
+        }
+
+        /* チェックボックスのスタイル */
+        .checkbox-group {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+        .checkbox-label {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            cursor: pointer;
+            padding: 10px;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            transition: all 0.2s;
+            font-size: 0.95rem;
+        }
+        .checkbox-label:hover {
+            background-color: #f1f5f9;
+            border-color: #007aff;
+        }
+        .checkbox-label input {
+            width: 18px;
+            height: 18px;
+            cursor: pointer;
+        }
+
+        /* ボタン */
+        .btn-container {
+            text-align: center;
+            margin-top: 25px;
+        }
+        .btn-diagnostic {
+            background-color: #007aff;
+            color: white;
+            border: none;
+            padding: 14px 40px;
+            font-size: 1.1rem;
+            font-weight: bold;
+            border-radius: 30px;
+            cursor: pointer;
+            width: 100%;
+            transition: background-color 0.2s;
+            box-shadow: 0 4px 6px rgba(0, 122, 255, 0.2);
+        }
+        .btn-diagnostic:hover {
+            background-color: #0056b3;
+        }
+
+        /* 結果セクション */
+        .result-section {
+            display: none;
+            animation: fadeIn 0.5s ease-in-out forwards;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .section-title {
+            font-size: 1.6rem;
+            margin-bottom: 25px;
+            color: #2b5c8f;
+            text-align: center;
+        }
+        .top3-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        .rank-card {
+            background: white;
+            border-radius: 12px;
+            padding: 25px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+            border-top: 6px solid #007aff;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+        .rank-card.rank-1 { border-top-color: #f59e0b; }
+        .rank-card.rank-2 { border-top-color: #94a3b8; }
+        .rank-card.rank-3 { border-top-color: #b45309; }
+
+        .rank-badge {
+            font-size: 1.1rem;
+            font-weight: bold;
+            color: #64748b;
+            margin-bottom: 5px;
+        }
+        .rank-1 .rank-badge { color: #d97706; }
+
+        .place-area {
+            font-size: 0.85rem;
+            color: #64748b;
+            margin: 0;
+        }
+        .place-name {
+            font-size: 1.5rem;
+            font-weight: bold;
+            margin: 5px 0 10px 0;
+        }
+        .score-display {
+            font-size: 1.1rem;
+            color: #e67e22;
+            font-weight: bold;
+            margin-bottom: 15px;
+        }
+        .info-display {
+            font-size: 0.85rem;
+            color: #666;
+            background: #f8fafc;
+            padding: 6px 10px;
+            border-radius: 4px;
+            margin-bottom: 15px;
+        }
+        .points-title {
+            font-weight: bold;
+            font-size: 0.9rem;
+            margin-bottom: 8px;
+        }
+        .caption {
+            font-size: 0.85rem;
+            color: #475569;
+            margin: 4px 0;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .status-box {
+            margin-top: 15px;
+            padding: 10px;
+            border-radius: 6px;
+            font-size: 0.85rem;
+            text-align: center;
+        }
+        .status-success {
+            background-color: #f0fdf4;
+            color: #166534;
+            border: 1px solid #bbf7d0;
+            font-weight: bold;
+        }
+        .details-box {
+            margin-top: 15px;
+        }
+        summary {
+            cursor: pointer;
+            padding: 8px;
+            background-color: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 6px;
+            font-size: 0.85rem;
+            font-weight: bold;
+        }
+        .details-content {
+            padding: 10px;
+            border: 1px solid #e2e8f0;
+            border-top: none;
+            border-radius: 0 0 6px 6px;
+            background-color: #fffafb;
+            font-size: 0.8rem;
+        }
+        .details-content ul {
+            margin: 5px 0;
+            padding-left: 18px;
+        }
+
+        /* テーブル */
+        .more-candidates {
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+        }
+        .more-candidates summary {
+            font-size: 1rem;
+            padding: 10px;
+            background: transparent;
+            border: none;
+        }
+        .table-responsive {
+            overflow-x: auto;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 15px;
+            font-size: 0.9rem;
+        }
+        th, td {
+            padding: 12px 10px;
+            text-align: left;
+            border-bottom: 1px solid #e2e8f0;
+        }
+        th {
+            background-color: #f1f5f9;
+            color: #2b5c8f;
+        }
+        .no-results {
+            text-align: center;
+            padding: 40px;
+            background: white;
+            border-radius: 12px;
+            color: #64748b;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <header>
+        <h1>旅行タイプ診断 & シミュレーター</h1>
+        <p class="subtitle">予算と時間を考慮した旅先マッチング</p>
+    </header>
+
+    <div class="main-layout">
+        <div class="config-panel">
+            <div class="section">
+                <h2>予算の上限</h2>
+                <div class="display-value">
+                    <span id="budget-value">30,000</span>円
+                </div>
+                <input type="range" id="budget-slider" class="slider" 
+                       min="1000" max="100000" step="1000" value="30000">
+                <div class="labels">
+                    <span>1,000円</span>
+                    <span>100,000円</span>
+                </div>
+            </div>
+
+            <hr>
+
+            <div class="section">
+                <h2>移動時間の上限</h2>
+                <div class="display-value">
+                    <span id="time-value">5</span>時間
+                </div>
+                <input type="range" id="time-slider" class="slider" 
+                       min="1" max="24" step="1" value="5">
+                <div class="labels">
+                    <span>1時間</span>
+                    <span>24時間</span>
+                </div>
+            </div>
+
+            <hr>
+
+            <div class="section">
+                <h2>目的・こだわり（複数選択可）</h2>
+                <div class="checkbox-group">
+                    <label class="checkbox-label"><input type="checkbox" id="event"> イベント・ライブ目的</label>
+                    <label class="checkbox-label"><input type="checkbox" id="safety"> 治安・安心感重視</label>
+                    <label class="checkbox-label"><input type="checkbox" id="gourmet"> グルメを堪能したい</label>
+                    <label class="checkbox-label"><input type="checkbox" id="crowd"> 混雑を避けたい</label>
+                    <label class="checkbox-label"><input type="checkbox" id="sightseeing"> 観光地を巡りたい</label>
+                    <label class="checkbox-label"><input type="checkbox" id="move_easy"> 移動は楽がいい</label>
+                    <label class="checkbox-label"><input type="checkbox" id="budget"> 予算を抑えたい</label>
+                    <label class="checkbox-label"><input type="checkbox" id="stay_long"> ゆったり滞在したい</label>
+                </div>
+            </div>
+
+            <div class="btn-container">
+                <button class="btn-diagnostic" onclick="runDiagnosis()">この条件で診断する</button>
+            </div>
+        </div>
+
+        <div id="resultContainer">
+            <div id="resultSection" class="result-section">
+                <div class="section-title">あなたにぴったりの旅行先 TOP3</div>
+                
+                <div class="top3-grid" id="top3Grid">
+                    </div>
+
+                <div class="more-candidates">
+                    <details>
+                        <summary>もっと他の候補も見る</summary>
+                        <div class="table-responsive">
+                            <table id="rankingTable">
+                                <thead>
+                                    <tr>
+                                        <th>観光地名</th>
+                                        <th>エリア</th>
+                                        <th>概算費用</th>
+                                        <th>移動時間</th>
+                                        <th>Score</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    </tbody>
+                            </table>
+                        </div>
+                    </details>
+                </div>
+            </div>
+            
+            <div id="noResultsSection" class="no-results" style="display: none;">
+                <h3>該当する旅行先がありません</h3>
+                <p>予算の上限や移動時間の上限を少し広げて、再度診断してください。</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// サンプルデータ（実際のCSV項目に合わせて費用(actual_cost)と時間(actual_time)を定義しています）
+const samplePlaces = [
+    { name: "熱海温泉", area: "東海", gourmet: 4, event: 3, sightseeing: 4, stay_time: 5, cost: 2, crowd: 4, distance: 1, safety: 5, actual_cost: 15000, actual_time: 2 },
+    { name: "箱根湯本", area: "関東", gourmet: 4, event: 2, sightseeing: 4, stay_time: 5, cost: 3, crowd: 4, distance: 1, safety: 5, actual_cost: 22000, actual_time: 1.5 },
+    { name: "仙台・松島", area: "東北", gourmet: 5, event: 4, sightseeing: 4, stay_time: 3, cost: 2, crowd: 2, distance: 2, safety: 5, actual_cost: 28000, actual_time: 2.5 },
+    { name: "金沢・兼六園", area: "北陸", gourmet: 5, event: 3, sightseeing: 5, stay_time: 4, cost: 3, crowd: 3, distance: 3, safety: 5, actual_cost: 35000, actual_time: 3 },
+    { name: "京都・東山", area: "近畿", gourmet: 5, event: 4, sightseeing: 5, stay_time: 4, cost: 4, crowd: 5, distance: 3, safety: 5, actual_cost: 45000, actual_time: 3.5 },
+    { name: "大阪・道頓堀", area: "近畿", gourmet: 5, event: 5, sightseeing: 4, stay_time: 3, cost: 3, crowd: 5, distance: 3, safety: 4, actual_cost: 42000, actual_time: 3.5 },
+    { name: "広島・宮島", area: "中国", gourmet: 4, event: 3, sightseeing: 5, stay_time: 4, cost: 3, crowd: 4, distance: 4, safety: 5, actual_cost: 55000, actual_time: 5 },
+    { name: "福岡・博多", area: "九州", gourmet: 5, event: 4, sightseeing: 3, stay_time: 3, cost: 3, crowd: 4, distance: 4, safety: 4, actual_cost: 48000, actual_time: 6 },
+    { name: "北海道・札幌", area: "北海道", gourmet: 5, event: 5, sightseeing: 5, stay_time: 4, cost: 4, crowd: 4, distance: 5, safety: 4, actual_cost: 65000, actual_time: 7 },
+    { name: "沖縄・那覇", area: "沖縄", gourmet: 4, event: 4, sightseeing: 4, stay_time: 5, cost: 4, crowd: 3, distance: 5, safety: 4, actual_cost: 75000, actual_time: 8 }
+];
+
+// スライダーUIの初期化とリアルタイム変更検知
+const budgetSlider = document.getElementById('budget-slider');
+const budgetDisplay = document.getElementById('budget-value');
+budgetSlider.addEventListener('input', (e) => {
+    budgetDisplay.textContent = parseInt(e.target.value).toLocaleString();
+});
+
+const timeSlider = document.getElementById('time-slider');
+const timeDisplay = document.getElementById('time-value');
+timeSlider.addEventListener('input', (e) => {
+    timeDisplay.textContent = e.target.value;
+});
+
+// 診断実行関数
+function runDiagnosis() {
+    // スライダーの値（上限値）を取得
+    const maxBudget = parseInt(budgetSlider.value);
+    const maxTime = parseFloat(timeSlider.value);
+
+    // チェックボックスの取得
+    const user = {
+        event: document.getElementById("event").checked ? 1 : 0,
+        gourmet: document.getElementById("gourmet").checked ? 1 : 0,
+        sightseeing: document.getElementById("sightseeing").checked ? 1 : 0,
+        budget_low: document.getElementById("budget").checked ? 1 : 0,
+        safety_first: document.getElementById("safety").checked ? 1 : 0,
+        no_crowd: document.getElementById("crowd").checked ? 1 : 0,
+        easy_move: document.getElementById("move_easy").checked ? 1 : 0,
+        long_stay: document.getElementById("stay_long").checked ? 1 : 0
+    };
+
+    // スライダーの上限条件でデータをフィルタリング ＆ スコア計算
+    let scoredPlaces = samplePlaces
+        .filter(row => row.actual_cost <= maxBudget && row.actual_time <= maxTime)
+        .map(row => {
+            let score = 0;
+            if (user.event) score += (row.event || 0) * 2;
+            if (user.gourmet) score += (row.gourmet || 0) * 2;
+            if (user.sightseeing) score += (row.sightseeing || 0) * 2;
+            if (user.safety_first) score += (row.safety || 0) * 2;
+            if (user.long_stay) score += (row.stay_time || 0) * 2;
+
+            if (user.budget_low) score -= (row.cost || 0) * 2;
+            if (user.no_crowd) score -= (row.crowd || 0) * 2;
+            if (user.easy_move) score -= (row.distance || 0) * 2;
+
+            return { ...row, score: score };
+        });
+
+    // スコアの降順（高い順）にソート
+    scoredPlaces.sort((a, b) => b.score - a.score);
+
+    const resultSection = document.getElementById("resultSection");
+    const noResultsSection = document.getElementById("noResultsSection");
+
+    // 該当する場所がない場合のハンドリング
+    if (scoredPlaces.length === 0) {
+        resultSection.style.display = "none";
+        noResultsSection.style.display = "block";
+        return;
+    } else {
+        resultSection.style.display = "block";
+        noResultsSection.style.display = "none";
+    }
+
+    // TOP3のレンダリング
+    const top3Grid = document.getElementById("top3Grid");
+    top3Grid.innerHTML = "";
+
+    for (let i = 0; i < Math.min(3, scoredPlaces.length); i++) {
+        const row = scoredPlaces[i];
+        
+        // ネックになるポイント（検討ポイント）の判定
+        let reasons = [];
+        if (user.budget_low && (row.cost || 0) >= 4) reasons.push("費用");
+        if (user.no_crowd && (row.crowd || 0) >= 4) reasons.push("混雑");
+        if (user.easy_move && (row.distance || 0) >= 4) reasons.push("移動距離");
+        if (user.safety_first && (row.safety || 0) <= 2) reasons.push("治安");
+
+        let pointsHtml = "";
+        if ((row.gourmet || 0) >= 4) pointsHtml += `<div class="caption">🍴 絶品グルメあり</div>`;
+        if ((row.event || 0) >= 4) pointsHtml += `<div class="caption">✨ 限定イベント開催</div>`;
+        if ((row.sightseeing || 0) >= 4) pointsHtml += `<div class="caption">🏙️ 定番観光スポット</div>`;
+        if ((row.stay_time || 0) >= 4) pointsHtml += `<div class="caption">🏨 のんびり滞在OK</div>`;
+
+        let statusHtml = "";
+        if (reasons.length > 0) {
+            let reasonsList = reasons.map(r => `<li><strong>${r}</strong></li>`).join("");
+            statusHtml = `
+                <div class="details-box">
+                    <details>
+                        <summary>検討ポイントあり</summary>
+                        <div class="details-content">
+                            以下の点がネックになる可能性があります：
+                            <ul>${reasonsList}</ul>
+                            <div class="caption" style="font-size:0.75rem; margin-top:5px; color:#777;">※早割の活用や移動手段の工夫をおすすめします。</div>
+                        </div>
+                    </details>
+                </div>
+            `;
+        } else {
+            statusHtml = `<div class="status-box status-success">相性バッチリ！</div>`;
+        }
+
+        const card = document.createElement("div");
+        card.className = `rank-card rank-${i+1}`;
+        card.innerHTML = `
+            <div>
+                <div class="rank-badge">第${i+1}位</div>
+                <p class="place-area">${row.area}</p>
+                <div class="place-name">${row.name}</div>
+                <div class="score-display">Score: ${row.score.toFixed(1)}</div>
+                <div class="info-display">目安: ${row.actual_cost.toLocaleString()}円 / 片道${row.actual_time}時間</div>
+                <div class="points-title">おすすめポイント:</div>
+                ${pointsHtml}
+            </div>
+            ${statusHtml}
+        `;
+        top3Grid.appendChild(card);
+    }
+
+    // 他の候補（テーブル）のレンダリング
+    const tbody = document.querySelector("#rankingTable tbody");
+    tbody.innerHTML = "";
+    for (let i = 0; i < Math.min(10, scoredPlaces.length); i++) {
+        const row = scoredPlaces[i];
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+            <td><strong>${row.name}</strong></td>
+            <td>${row.area}</td>
+            <td>${row.actual_cost.toLocaleString()}円</td>
+            <td>${row.actual_time}時間</td>
+            <td style="font-weight:bold; color:#e67e22;">${row.score.toFixed(1)}</td>
+        `;
+        tbody.appendChild(tr);
+    }
+
+    // 結果部分までスムーズスクロール
+    resultSection.scrollIntoView({ behavior: 'smooth' });
+}
+</script>
+
+</body>
+</html>
