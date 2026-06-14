@@ -3,9 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>旅先マッチング - 旅行タイプ診断 & シミュレーター</title>
+    <title>旅先マッチング - 究極のパーソナライズシミュレーター</title>
     <style>
-        /* 共通スタイル & ベース */
         body {
             font-family: 'Helvetica Neue', Arial, "Hiragino Kaku Gothic ProN", "Hiragino Sans", Meiryo, sans-serif;
             padding: 40px 20px;
@@ -14,469 +13,323 @@
             margin: 0;
             line-height: 1.6;
         }
-        .container {
-            max-width: 1200px;
-            margin: 0 auto;
-        }
-        header {
-            text-align: center;
-            margin-bottom: 40px;
-        }
-        h1 {
-            color: #2b5c8f;
-            font-size: 2.5rem;
-            margin-bottom: 10px;
-        }
-        .subtitle {
-            color: #64748b;
-            font-size: 1.1rem;
-        }
+        .container { max-width: 1200px; margin: 0 auto; }
+        header { text-align: center; margin-bottom: 40px; }
+        h1 { color: #2b5c8f; font-size: 2.5rem; margin-bottom: 10px; }
+        .subtitle { color: #64748b; font-size: 1.1rem; }
 
-        /* 2カラムレイアウト（設定エリアと結果エリア） */
-        .main-layout {
-            display: grid;
-            grid-template-columns: 1fr;
-            gap: 30px;
-        }
-        @media (min-width: 900px) {
-            .main-layout {
-                grid-template-columns: 400px 1fr;
-            }
-        }
+        .main-layout { display: grid; grid-template-columns: 1fr; gap: 30px; }
+        @media (min-width: 900px) { .main-layout { grid-template-columns: 460px 1fr; } }
 
-        /* 設定パネル（スライダー ＆ チェックボックス） */
-        .config-panel {
-            background: white;
-            padding: 30px;
-            border-radius: 12px;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.05);
-            height: fit-content;
-        }
-        .section {
-            margin-bottom: 30px;
-        }
-        h2 {
-            font-size: 1.1rem;
-            margin-bottom: 15px;
-            color: #2b5c8f;
-            border-left: 4px solid #2b5c8f;
-            padding-left: 10px;
-        }
-        .display-value {
-            font-size: 2rem;
-            font-weight: bold;
-            color: #007aff;
-            margin-bottom: 15px;
-            text-align: center;
-        }
-        .slider {
-            -webkit-appearance: none;
-            width: 100%;
-            height: 8px;
-            border-radius: 4px;
-            background: #e4e7eb;
-            outline: none;
-        }
-        .slider::-webkit-slider-thumb {
-            -webkit-appearance: none;
-            width: 24px;
-            height: 24px;
-            border-radius: 50%;
-            background: #007aff;
-            cursor: pointer;
-            transition: transform 0.1s;
-        }
-        .slider::-webkit-slider-thumb:hover {
-            transform: scale(1.2);
-        }
-        .labels {
-            display: flex;
-            justify-content: space-between;
-            margin-top: 8px;
-            color: #999;
-            font-size: 0.85rem;
-        }
-        hr {
-            border: 0;
-            border-top: 1px solid #eee;
-            margin: 25px 0;
-        }
+        .config-panel { background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); height: fit-content; }
+        .section { margin-bottom: 25px; }
+        h2 { font-size: 1.1rem; margin-bottom: 15px; color: #2b5c8f; border-left: 4px solid #2b5c8f; padding-left: 10px; }
+        .display-value { font-size: 2rem; font-weight: bold; color: #007aff; margin-bottom: 15px; text-align: center; }
+        .slider { -webkit-appearance: none; width: 100%; height: 8px; border-radius: 4px; background: #e4e7eb; outline: none; }
+        .slider::-webkit-slider-thumb { -webkit-appearance: none; width: 24px; height: 24px; border-radius: 50%; background: #007aff; cursor: pointer; }
+        
+        .location-box { display: flex; gap: 10px; }
+        .input-text { flex: 1; padding: 10px; border: 1px solid #e2e8f0; border-radius: 8px; font-size: 1rem; box-sizing: border-box; }
+        .btn-geo { background-color: #e2e8f0; border: none; padding: 0 15px; border-radius: 8px; cursor: pointer; font-size: 0.9rem; font-weight: bold; }
 
-        /* チェックボックスのスタイル */
-        .checkbox-group {
-            display: flex;
-            flex-direction: column;
-            gap: 12px;
-        }
-        .checkbox-label {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            cursor: pointer;
-            padding: 10px;
-            border: 1px solid #e2e8f0;
-            border-radius: 8px;
-            transition: all 0.2s;
-            font-size: 0.95rem;
-        }
-        .checkbox-label:hover {
-            background-color: #f1f5f9;
-            border-color: #007aff;
-        }
-        .checkbox-label input {
-            width: 18px;
-            height: 18px;
-            cursor: pointer;
-        }
+        /* 新設UI用の横並びフレックスボックス */
+        .flex-inputs { display: flex; gap: 15px; }
+        .flex-inputs > div { flex: 1; }
+        .select-input { width: 100%; padding: 10px; border: 1px solid #e2e8f0; border-radius: 8px; font-size: 1rem; background: white; cursor: pointer; }
 
-        /* ボタン */
-        .btn-container {
-            text-align: center;
-            margin-top: 25px;
-        }
-        .btn-diagnostic {
-            background-color: #007aff;
-            color: white;
-            border: none;
-            padding: 14px 40px;
-            font-size: 1.1rem;
-            font-weight: bold;
-            border-radius: 30px;
-            cursor: pointer;
-            width: 100%;
-            transition: background-color 0.2s;
-            box-shadow: 0 4px 6px rgba(0, 122, 255, 0.2);
-        }
-        .btn-diagnostic:hover {
-            background-color: #0056b3;
-        }
+        .transport-group { display: flex; gap: 15px; }
+        .transport-label { flex: 1; display: flex; align-items: center; justify-content: center; gap: 8px; padding: 12px; border: 1px solid #e2e8f0; border-radius: 8px; cursor: pointer; font-weight: bold; background: #fff; }
+        .transport-label input { width: 18px; height: 18px; }
+        .transport-label:has(input:checked) { border-color: #007aff; background-color: #eff6ff; color: #007aff; }
 
-        /* 結果セクション */
-        .result-section {
-            display: none;
-            animation: fadeIn 0.5s ease-in-out forwards;
-        }
-        @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(20px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-        .section-title {
-            font-size: 1.6rem;
-            margin-bottom: 25px;
-            color: #2b5c8f;
-            text-align: center;
-        }
-        .top3-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-            gap: 20px;
-            margin-bottom: 30px;
-        }
-        .rank-card {
-            background: white;
-            border-radius: 12px;
-            padding: 25px;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.05);
-            border-top: 6px solid #007aff;
-            display: flex;
-            flex-direction: column;
-            justify-content: space-between;
-        }
+        .preference-table { width: 100%; border-collapse: collapse; }
+        .preference-table td { padding: 8px 4px; font-size: 0.95rem; }
+        .select-weight { width: 100%; padding: 8px; border: 1px solid #e2e8f0; border-radius: 6px; background-color: #fff; cursor: pointer; }
+
+        hr { border: 0; border-top: 1px solid #eee; margin: 20px 0; }
+        .btn-diagnostic { background-color: #007aff; color: white; border: none; padding: 14px 40px; font-size: 1.1rem; font-weight: bold; border-radius: 30px; cursor: pointer; width: 100%; }
+
+        /* 結果エリア */
+        .result-section { display: none; animation: fadeIn 0.5s ease-in-out forwards; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+        .section-title { font-size: 1.6rem; margin-bottom: 25px; color: #2b5c8f; text-align: center; }
+        .top3-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 20px; margin-bottom: 30px; }
+        
+        .rank-card { background: white; border-radius: 12px; padding: 25px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); border-top: 6px solid #007aff; display: flex; flex-direction: column; justify-content: space-between; }
         .rank-card.rank-1 { border-top-color: #f59e0b; }
         .rank-card.rank-2 { border-top-color: #94a3b8; }
         .rank-card.rank-3 { border-top-color: #b45309; }
+        .rank-badge { font-size: 1.1rem; font-weight: bold; color: #64748b; margin-bottom: 5px; }
+        .place-name { font-size: 1.5rem; font-weight: bold; margin: 5px 0 10px 0; }
+        .score-display { font-size: 1.2rem; color: #e67e22; font-weight: bold; margin-bottom: 15px; }
+        
+        /* シーズンバッジ */
+        .season-badge { display: inline-block; background-color: #ffedd5; color: #c2410c; padding: 2px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: bold; margin-bottom: 10px; }
 
-        .rank-badge {
-            font-size: 1.1rem;
-            font-weight: bold;
-            color: #64748b;
-            margin-bottom: 5px;
-        }
-        .rank-1 .rank-badge { color: #d97706; }
+        .waypoint-box { background-color: #f8fafc; border-left: 4px solid #007aff; padding: 12px; border-radius: 0 8px 8px 0; margin: 15px 0; font-size: 0.88rem; }
+        .waypoint-title { font-weight: bold; color: #1e293b; margin-bottom: 4px; }
 
-        .place-area {
-            font-size: 0.85rem;
-            color: #64748b;
-            margin: 0;
-        }
-        .place-name {
-            font-size: 1.5rem;
-            font-weight: bold;
-            margin: 5px 0 10px 0;
-        }
-        .score-display {
-            font-size: 1.1rem;
-            color: #e67e22;
-            font-weight: bold;
-            margin-bottom: 15px;
-        }
-        .info-display {
-            font-size: 0.85rem;
-            color: #666;
-            background: #f8fafc;
-            padding: 6px 10px;
-            border-radius: 4px;
-            margin-bottom: 15px;
-        }
-        .points-title {
-            font-weight: bold;
-            font-size: 0.9rem;
-            margin-bottom: 8px;
-        }
-        .caption {
-            font-size: 0.85rem;
-            color: #475569;
-            margin: 4px 0;
-            display: flex;
-            align-items: center;
-            gap: 6px;
-        }
-        .status-box {
-            margin-top: 15px;
-            padding: 10px;
-            border-radius: 6px;
-            font-size: 0.85rem;
-            text-align: center;
-        }
-        .status-success {
-            background-color: #f0fdf4;
-            color: #166534;
-            border: 1px solid #bbf7d0;
-            font-weight: bold;
-        }
-        .details-box {
-            margin-top: 15px;
-        }
-        summary {
-            cursor: pointer;
-            padding: 8px;
-            background-color: #f8fafc;
-            border: 1px solid #e2e8f0;
-            border-radius: 6px;
-            font-size: 0.85rem;
-            font-weight: bold;
-        }
-        .details-content {
-            padding: 10px;
-            border: 1px solid #e2e8f0;
-            border-top: none;
-            border-radius: 0 0 6px 6px;
-            background-color: #fffafb;
-            font-size: 0.8rem;
-        }
-        .details-content ul {
-            margin: 5px 0;
-            padding-left: 18px;
-        }
+        .card-actions { display: flex; gap: 10px; margin-top: 10px; }
+        .btn-map { flex: 1; display: inline-block; background-color: #22c55e; color: white; text-decoration: none; padding: 10px; font-size: 0.85rem; font-weight: bold; border-radius: 6px; text-align: center; }
+        .btn-keep { background-color: #f59e0b; color: white; border: none; padding: 10px; font-size: 0.85rem; font-weight: bold; border-radius: 6px; cursor: pointer; }
 
-        /* テーブル */
-        .more-candidates {
-            background: white;
-            border-radius: 12px;
-            padding: 20px;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.05);
-        }
-        .more-candidates summary {
-            font-size: 1rem;
-            padding: 10px;
-            background: transparent;
-            border: none;
-        }
-        .table-responsive {
-            overflow-x: auto;
-        }
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            margin-top: 15px;
-            font-size: 0.9rem;
-        }
-        th, td {
-            padding: 12px 10px;
-            text-align: left;
-            border-bottom: 1px solid #e2e8f0;
-        }
-        th {
-            background-color: #f1f5f9;
-            color: #2b5c8f;
-        }
-        .no-results {
-            text-align: center;
-            padding: 40px;
-            background: white;
-            border-radius: 12px;
-            color: #64748b;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.05);
-        }
+        .keep-section { background: white; border-radius: 12px; padding: 30px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); margin-top: 40px; }
+        .keep-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 20px; margin-top: 20px; }
+        .keep-card { border: 1px solid #e2e8f0; padding: 20px; border-radius: 8px; background: #fafafa; display: flex; flex-direction: column; justify-content: space-between; position: relative; }
+        .btn-delete { position: absolute; top: 15px; right: 15px; background: none; border: none; color: #ef4444; cursor: pointer; font-size: 0.85rem; }
+
+        .no-results { text-align: center; padding: 40px; background: white; border-radius: 12px; }
+        .hate-warning { background-color: #fef2f2; border: 1px solid #fca5a5; color: #991b1b; padding: 8px; border-radius: 6px; font-size: 0.8rem; margin-bottom: 10px; }
     </style>
 </head>
 <body>
 
 <div class="container">
     <header>
-        <h1>旅行タイプ診断 & シミュレーター</h1>
-        <p class="subtitle">予算と時間を考慮した旅先マッチング</p>
+        <h1>旅行パーソナライズシミュレーター</h1>
+        <p class="subtitle">「出発時期・人数・世代」×「割り勘・シーズンボーナス自動連動」</p>
     </header>
 
     <div class="main-layout">
         <div class="config-panel">
             <div class="section">
-                <h2>予算の上限</h2>
-                <div class="display-value">
-                    <span id="budget-value">30,000</span>円
-                </div>
-                <input type="range" id="budget-slider" class="slider" 
-                       min="1000" max="100000" step="1000" value="30000">
-                <div class="labels">
-                    <span>1,000円</span>
-                    <span>100,000円</span>
+                <h2>出発地（現在地）</h2>
+                <div class="location-box">
+                    <input type="text" id="start-location" class="input-text" value="現在地" placeholder="例：東京駅、新宿、大阪駅">
+                    <button class="btn-geo" onclick="getGeoLocation()">📍取得</button>
                 </div>
             </div>
 
             <hr>
 
             <div class="section">
-                <h2>移動時間の上限</h2>
-                <div class="display-value">
-                    <span id="time-value">5</span>時間
-                </div>
-                <input type="range" id="time-slider" class="slider" 
-                       min="1" max="24" step="1" value="5">
-                <div class="labels">
-                    <span>1時間</span>
-                    <span>24時間</span>
+                <h2>出発時期</h2>
+                <select id="travel-month" class="select-input">
+                    <option value="春">3月〜5月（春旅）</option>
+                    <option value="夏">6月〜8月（夏旅）</option>
+                    <option value="秋">9月〜11月（秋旅）</option>
+                    <option value="冬" selected>12月〜2月（冬旅）</option>
+                </select>
+            </div>
+
+            <hr>
+
+            <div class="section">
+                <h2>旅行人数 と 同行者の主な年代</h2>
+                <div class="flex-inputs">
+                    <div>
+                        <select id="travel-members" class="select-input">
+                            <option value="1" selected>1人（ソロ旅）</option>
+                            <option value="2">2人</option>
+                            <option value="3">3人</option>
+                            <option value="4">4人以上</option>
+                        </select>
+                    </div>
+                    <div>
+                        <select id="travel-generation" class="select-input">
+                            <option value="young" selected>若者・学生</option>
+                            <option value="adult">大人（20〜50代）</option>
+                            <option value="senior">シニア（60代〜）</option>
+                            <option value="child">子連れ・ファミリー</option>
+                        </select>
+                    </div>
                 </div>
             </div>
 
             <hr>
 
             <div class="section">
-                <h2>目的・こだわり（複数選択可）</h2>
-                <div class="checkbox-group">
-                    <label class="checkbox-label"><input type="checkbox" id="event"> イベント・ライブ目的</label>
-                    <label class="checkbox-label"><input type="checkbox" id="safety"> 治安・安心感重視</label>
-                    <label class="checkbox-label"><input type="checkbox" id="gourmet"> グルメを堪能したい</label>
-                    <label class="checkbox-label"><input type="checkbox" id="crowd"> 混雑を避けたい</label>
-                    <label class="checkbox-label"><input type="checkbox" id="sightseeing"> 観光地を巡りたい</label>
-                    <label class="checkbox-label"><input type="checkbox" id="move_easy"> 移動は楽がいい</label>
-                    <label class="checkbox-label"><input type="checkbox" id="budget"> 予算を抑えたい</label>
-                    <label class="checkbox-label"><input type="checkbox" id="stay_long"> ゆったり滞在したい</label>
+                <h2>移動手段</h2>
+                <div class="transport-group">
+                    <label class="transport-label"><input type="radio" name="transport-mode" value="transit" checked> 🚄 電車・新幹線</label>
+                    <label class="transport-label"><input type="radio" name="transport-mode" value="driving"> 🚗 自動車・ドライブ</label>
                 </div>
             </div>
 
-            <div class="btn-container">
-                <button class="btn-diagnostic" onclick="runDiagnosis()">この条件で診断する</button>
+            <hr>
+
+            <div class="section">
+                <h2>1人あたりの予算上限（費用制約）</h2>
+                <div class="display-value"><span id="budget-value">60,000</span>円</div>
+                <input type="range" id="budget-slider" class="slider" min="1000" max="100000" step="1000" value="60000">
             </div>
+
+            <hr>
+
+            <div class="section">
+                <h2>移動時間の上限（時間制約）</h2>
+                <div class="display-value"><span id="time-value">5</span>時間</div>
+                <input type="range" id="time-slider" class="slider" min="1" max="24" step="1" value="5">
+            </div>
+
+            <hr>
+
+            <div class="section">
+                <h2>各要素へのこだわり・スタンス</h2>
+                <table class="preference-table">
+                    <tr><td>🍴 グルメを堪能</td><td><select id="weight-gourmet" class="select-weight"><option value="1">1: 重視する</option><option value="0.5">0.5: 軽視する</option><option value="0" selected>0: 考慮しない</option><option value="-1">-1: 忌み嫌う</option></select></td></tr>
+                    <tr><td>✨ イベント・ライブ</td><td><select id="weight-event" class="select-weight"><option value="1">1: 重視する</option><option value="0.5">0.5: 軽視する</option><option value="0" selected>0: 考慮しない</option><option value="-1">-1: 忌み嫌う</option></select></td></tr>
+                    <tr><td>🏙️ 観光地を巡る</td><td><select id="weight-sightseeing" class="select-weight"><option value="1">1: 重視する</option><option value="0.5">0.5: 軽視する</option><option value="0" selected>0: 考慮しない</option><option value="-1">-1: 忌み嫌う</option></select></td></tr>
+                    <tr><td>🏨 のんびり滞在</td><td><select id="weight-stay_time" class="select-weight"><option value="1">1: 重視する</option><option value="0.5">0.5: 軽視する</option><option value="0" selected>0: 考慮しない</option><option value="-1">-1: 忌み嫌う</option></select></td></tr>
+                    <tr><td>🛡️ 治安・安心感</td><td><select id="weight-safety" class="select-weight"><option value="1">1: 重視する</option><option value="0.5">0.5: 軽視する</option><option value="0" selected>0: 考慮しない</option><option value="-1">-1: 忌み嫌う</option></select></td></tr>
+                    <tr><td>👥 混雑（人混み）</td><td><select id="weight-crowd" class="select-weight"><option value="1">1: 混雑OK</option><option value="0.5">0.5: 少しならOK</option><option value="0" selected>0: 考慮しない</option><option value="-1">-1: 忌み嫌う</option></select></td></tr>
+                </table>
+            </div>
+
+            <button class="btn-diagnostic" onclick="runDiagnosis()">この条件とスタンスで診断する</button>
         </div>
 
         <div id="resultContainer">
             <div id="resultSection" class="result-section">
-                <div class="section-title">あなたにぴったりの旅行先 TOP3</div>
-                
-                <div class="top3-grid" id="top3Grid">
-                    </div>
-
-                <div class="more-candidates">
-                    <details>
-                        <summary>もっと他の候補も見る</summary>
-                        <div class="table-responsive">
-                            <table id="rankingTable">
-                                <thead>
-                                    <tr>
-                                        <th>観光地名</th>
-                                        <th>エリア</th>
-                                        <th>概算費用</th>
-                                        <th>移動時間</th>
-                                        <th>Score</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    </tbody>
-                            </table>
-                        </div>
-                    </details>
-                </div>
+                <div class="section-title">あなた（たち）にぴったりの旅行先 TOP3</div>
+                <div class="top3-grid" id="top3Grid"></div>
             </div>
-            
             <div id="noResultsSection" class="no-results" style="display: none;">
                 <h3>該当する旅行先がありません</h3>
-                <p>予算の上限や移動時間の上限を少し広げて、再度診断してください。</p>
+                <p>選択した条件（移動手段・人数予算・時間）を見直してみてください。</p>
             </div>
         </div>
+    </div>
+
+    <div class="keep-section">
+        <h2>⭐ キープした旅行プラン一覧</h2>
+        <div id="keep-status" style="color:#64748b; font-size:0.9rem;">まだキープしたプランはありません。</div>
+        <div class="keep-grid" id="keepGrid"></div>
     </div>
 </div>
 
 <script>
-// サンプルデータ（実際のCSV項目に合わせて費用(actual_cost)と時間(actual_time)を定義しています）
+// 💡 マスタデータに「ベストシーズン（best_season）」のパラメータを追加
 const samplePlaces = [
-    { name: "熱海温泉", area: "東海", gourmet: 4, event: 3, sightseeing: 4, stay_time: 5, cost: 2, crowd: 4, distance: 1, safety: 5, actual_cost: 15000, actual_time: 2 },
-    { name: "箱根湯本", area: "関東", gourmet: 4, event: 2, sightseeing: 4, stay_time: 5, cost: 3, crowd: 4, distance: 1, safety: 5, actual_cost: 22000, actual_time: 1.5 },
-    { name: "仙台・松島", area: "東北", gourmet: 5, event: 4, sightseeing: 4, stay_time: 3, cost: 2, crowd: 2, distance: 2, safety: 5, actual_cost: 28000, actual_time: 2.5 },
-    { name: "金沢・兼六園", area: "北陸", gourmet: 5, event: 3, sightseeing: 5, stay_time: 4, cost: 3, crowd: 3, distance: 3, safety: 5, actual_cost: 35000, actual_time: 3 },
-    { name: "京都・東山", area: "近畿", gourmet: 5, event: 4, sightseeing: 5, stay_time: 4, cost: 4, crowd: 5, distance: 3, safety: 5, actual_cost: 45000, actual_time: 3.5 },
-    { name: "大阪・道頓堀", area: "近畿", gourmet: 5, event: 5, sightseeing: 4, stay_time: 3, cost: 3, crowd: 5, distance: 3, safety: 4, actual_cost: 42000, actual_time: 3.5 },
-    { name: "広島・宮島", area: "中国", gourmet: 4, event: 3, sightseeing: 5, stay_time: 4, cost: 3, crowd: 4, distance: 4, safety: 5, actual_cost: 55000, actual_time: 5 },
-    { name: "福岡・博多", area: "九州", gourmet: 5, event: 4, sightseeing: 3, stay_time: 3, cost: 3, crowd: 4, distance: 4, safety: 4, actual_cost: 48000, actual_time: 6 },
-    { name: "北海道・札幌", area: "北海道", gourmet: 5, event: 5, sightseeing: 5, stay_time: 4, cost: 4, crowd: 4, distance: 5, safety: 4, actual_cost: 65000, actual_time: 7 },
-    { name: "沖縄・那覇", area: "沖縄", gourmet: 4, event: 4, sightseeing: 4, stay_time: 5, cost: 4, crowd: 3, distance: 5, safety: 4, actual_cost: 75000, actual_time: 8 }
+    { 
+        name: "熱海温泉", area: "東海", gourmet: 4, event: 3, sightseeing: 3, stay_time: 5, safety: 5, crowd: 4, best_season: "冬",
+        transit: { cost: 15000, time: 2, text: "小田原駅（守谷のあんパンがおすすめ！）", map: "小田原駅" },
+        driving: { cost: 8000,  time: 2.5, text: "海老名SA（名物のメロンパンをゲット！）", map: "海老名SA" }
+    },
+    { 
+        name: "箱根湯本", area: "関東", gourmet: 4, event: 2, sightseeing: 4, stay_time: 5, safety: 5, crowd: 4, best_season: "冬",
+        transit: { cost: 22000, time: 1.5, text: "ロマンスカー車内（定番の豚弁当を車内で！）", map: "" },
+        driving: { cost: 7000,  time: 2, text: "大磯PA（湘南の海を眺めながら小休憩）", map: "大磯PA" }
+    },
+    { 
+        name: "仙台・松島", area: "東北", gourmet: 5, event: 4, sightseeing: 4, stay_time: 3, safety: 5, crowd: 2, best_season: "秋",
+        transit: { cost: 28000, time: 2.5, text: "宇都宮駅（途中下車して駅チカで宇都宮餃子を！）", map: "宇都宮駅" },
+        driving: { cost: 18000, time: 5, text: "那須高原SA（美味しい高原ソフトクリームを捕獲！）", map: "那須高原SA" }
+    },
+    { 
+        name: "金沢・兼六園", area: "北陸", gourmet: 5, event: 3, sightseeing: 5, stay_time: 4, safety: 5, crowd: 3, best_season: "春",
+        transit: { cost: 35000, time: 3, text: "富山駅（途中下車して駅構内で富山名物『白えび丼』を！）", map: "富山駅" },
+        driving: { cost: 22000, time: 6.5, text: "有磯海SA（日本海を一望できる絶景スポット！）", map: "有磯海SA" }
+    },
+    { 
+        name: "京都・東山", area: "近畿", gourmet: 5, event: 4, sightseeing: 5, stay_time: 4, safety: 5, crowd: 5, best_season: "春",
+        transit: { cost: 45000, time: 3.5, text: "名古屋駅（新幹線ホームの『住よし』できしめんを！）", map: "名古屋駅" },
+        driving: { cost: 25000, time: 6, text: "浜名湖SA（浜名湖を眺めながら名物のウナギを！）", map: "浜名湖SA" }
+    }
 ];
 
-// スライダーUIの初期化とリアルタイム変更検知
 const budgetSlider = document.getElementById('budget-slider');
 const budgetDisplay = document.getElementById('budget-value');
-budgetSlider.addEventListener('input', (e) => {
-    budgetDisplay.textContent = parseInt(e.target.value).toLocaleString();
-});
+budgetSlider.addEventListener('input', (e) => { budgetDisplay.textContent = parseInt(e.target.value).toLocaleString(); });
 
 const timeSlider = document.getElementById('time-slider');
 const timeDisplay = document.getElementById('time-value');
-timeSlider.addEventListener('input', (e) => {
-    timeDisplay.textContent = e.target.value;
-});
+timeSlider.addEventListener('input', (e) => { timeDisplay.textContent = e.target.value; });
 
-// 診断実行関数
+document.addEventListener("DOMContentLoaded", renderKeepList);
+
+function getGeoLocation() {
+    const status = document.getElementById("geo-status");
+    if (!navigator.geolocation) { status.textContent = "未対応"; return; }
+    status.textContent = "📍 計算中...";
+    navigator.geolocation.getCurrentPosition(
+        (position) => {
+            document.getElementById("start-location").value = `${position.coords.latitude},${position.coords.longitude}`;
+            status.textContent = "✅ GPS取得完了";
+        },
+        () => {
+            document.getElementById("start-location").value = "現在地";
+            status.textContent = "⚠️ Map側のGPSを使用します。";
+        }
+    );
+}
+
 function runDiagnosis() {
-    // スライダーの値（上限値）を取得
+    let startLoc = document.getElementById("start-location").value.trim() || "現在地";
     const maxBudget = parseInt(budgetSlider.value);
     const maxTime = parseFloat(timeSlider.value);
 
-    // チェックボックスの取得
-    const user = {
-        event: document.getElementById("event").checked ? 1 : 0,
-        gourmet: document.getElementById("gourmet").checked ? 1 : 0,
-        sightseeing: document.getElementById("sightseeing").checked ? 1 : 0,
-        budget_low: document.getElementById("budget").checked ? 1 : 0,
-        safety_first: document.getElementById("safety").checked ? 1 : 0,
-        no_crowd: document.getElementById("crowd").checked ? 1 : 0,
-        easy_move: document.getElementById("move_easy").checked ? 1 : 0,
-        long_stay: document.getElementById("stay_long").checked ? 1 : 0
+    // 新設UIの値を取得
+    const selectedSeason = document.getElementById("travel-month").value;
+    const memberCount = parseInt(document.getElementById("travel-members").value);
+    const generation = document.getElementById("travel-generation").value;
+    const mode = document.querySelector('input[name="transport-mode"]:checked').value;
+
+    const weights = {
+        gourmet:     parseFloat(document.getElementById("weight-gourmet").value),
+        event:       parseFloat(document.getElementById("weight-event").value),
+        sightseeing: parseFloat(document.getElementById("weight-sightseeing").value),
+        stay_time:   parseFloat(document.getElementById("weight-stay_time").value),
+        safety:      parseFloat(document.getElementById("weight-safety").value),
+        crowd:       parseFloat(document.getElementById("weight-crowd").value)
     };
 
-    // スライダーの上限条件でデータをフィルタリング ＆ スコア計算
-    let scoredPlaces = samplePlaces
-        .filter(row => row.actual_cost <= maxBudget && row.actual_time <= maxTime)
-        .map(row => {
-            let score = 0;
-            if (user.event) score += (row.event || 0) * 2;
-            if (user.gourmet) score += (row.gourmet || 0) * 2;
-            if (user.sightseeing) score += (row.sightseeing || 0) * 2;
-            if (user.safety_first) score += (row.safety || 0) * 2;
-            if (user.long_stay) score += (row.stay_time || 0) * 2;
+    // 💡【ロジック拡張 1】同行者の「年代」による重みづけ（スタンス）の裏側補正
+    if (generation === "senior") {
+        weights.stay_time = Math.max(weights.stay_time, 1); // シニア旅なら「のんびり」を自動で最重視
+    } else if (generation === "child") {
+        weights.safety = Math.max(weights.safety, 1);      // 子連れなら「治安・安心」を自動で最重視
+    }
 
-            if (user.budget_low) score -= (row.cost || 0) * 2;
-            if (user.no_crowd) score -= (row.crowd || 0) * 2;
-            if (user.easy_move) score -= (row.distance || 0) * 2;
+    /* 💡【ロジック拡張 2】人数による「1人あたり費用」の自動割り勘計算フィルター */
+    let filteredPlaces = samplePlaces.filter(row => {
+        let perPersonCost = 0;
+        if (mode === "driving") {
+            // 車の場合：高速・燃料代（一律料金）を人数で割り算
+            perPersonCost = row.driving.cost / memberCount;
+        } else {
+            // 電車の場合：切符代は人数に比例するため、1人あたりはそのまま
+            perPersonCost = row.transit.cost;
+        }
+        return perPersonCost <= maxBudget && row[mode].time <= maxTime;
+    });
 
-            return { ...row, score: score };
+    let scoredPlaces = filteredPlaces.map(place => {
+        let totalScore = 0;
+        let hateWarnings = [];
+
+        // 💡【ロジック拡張 3】出発時期（シーズン）が一致したらボーナス加点
+        if (place.best_season === selectedSeason) {
+            totalScore += 5.0; // ベストシーズンなら無条件で5点加算
+        }
+
+        const constraints = [
+            { name: "グルメ",     val: place.gourmet,     w: weights.gourmet,     type: "plus" },
+            { name: "イベント",   val: place.event,       w: weights.event,       type: "plus" },
+            { name: "観光地",     val: place.sightseeing, w: weights.sightseeing, type: "plus" },
+            { name: "のんびり",   val: place.stay_time,    w: weights.stay_time,   type: "plus" },
+            { name: "治安",       val: place.safety,      w: weights.safety,      type: "safety" },
+            { name: "混雑",       val: place.crowd,       w: weights.crowd,       type: "minus" }
+        ];
+
+        constraints.forEach(c => {
+            if (c.w === 1 || c.w === 0.5) {
+                if (c.type === "plus" || c.type === "safety") totalScore += c.val * (c.w * 2);
+                else if (c.type === "minus") totalScore += (6 - c.val) * (c.w * 2);
+            } else if (c.w === -1) {
+                if (c.type === "minus" && c.val >= 4) { totalScore -= 20; hateWarnings.push(`⚠️ 混雑が強めです`); }
+                if (c.type === "safety" && c.val <= 3) { totalScore -= 20; hateWarnings.push(`🚨 治安に不安があります`); }
+            }
         });
 
-    // スコアの降順（高い順）にソート
-    scoredPlaces.sort((a, b) => b.score - a.score);
+        return { ...place, totalScore: totalScore, hateWarnings: hateWarnings };
+    });
+
+    scoredPlaces.sort((a, b) => b.totalScore - a.totalScore);
 
     const resultSection = document.getElementById("resultSection");
     const noResultsSection = document.getElementById("noResultsSection");
 
-    // 該当する場所がない場合のハンドリング
     if (scoredPlaces.length === 0) {
         resultSection.style.display = "none";
         noResultsSection.style.display = "block";
@@ -486,80 +339,98 @@ function runDiagnosis() {
         noResultsSection.style.display = "none";
     }
 
-    // TOP3のレンダリング
     const top3Grid = document.getElementById("top3Grid");
     top3Grid.innerHTML = "";
 
     for (let i = 0; i < Math.min(3, scoredPlaces.length); i++) {
         const row = scoredPlaces[i];
-        
-        // ネックになるポイント（検討ポイント）の判定
-        let reasons = [];
-        if (user.budget_low && (row.cost || 0) >= 4) reasons.push("費用");
-        if (user.no_crowd && (row.crowd || 0) >= 4) reasons.push("混雑");
-        if (user.easy_move && (row.distance || 0) >= 4) reasons.push("移動距離");
-        if (user.safety_first && (row.safety || 0) <= 2) reasons.push("治安");
+        const modeData = row[mode];
 
-        let pointsHtml = "";
-        if ((row.gourmet || 0) >= 4) pointsHtml += `<div class="caption">🍴 絶品グルメあり</div>`;
-        if ((row.event || 0) >= 4) pointsHtml += `<div class="caption">✨ 限定イベント開催</div>`;
-        if ((row.sightseeing || 0) >= 4) pointsHtml += `<div class="caption">🏙️ 定番観光スポット</div>`;
-        if ((row.stay_time || 0) >= 4) pointsHtml += `<div class="caption">🏨 のんびり滞在OK</div>`;
+        // 割り勘された実際の表示用コスト
+        const finalCost = (mode === "driving") ? (modeData.cost / memberCount) : modeData.cost;
 
-        let statusHtml = "";
-        if (reasons.length > 0) {
-            let reasonsList = reasons.map(r => `<li><strong>${r}</strong></li>`).join("");
-            statusHtml = `
-                <div class="details-box">
-                    <details>
-                        <summary>検討ポイントあり</summary>
-                        <div class="details-content">
-                            以下の点がネックになる可能性があります：
-                            <ul>${reasonsList}</ul>
-                            <div class="caption" style="font-size:0.75rem; margin-top:5px; color:#777;">※早割の活用や移動手段の工夫をおすすめします。</div>
-                        </div>
-                    </details>
-                </div>
-            `;
-        } else {
-            statusHtml = `<div class="status-box status-success">相性バッチリ！</div>`;
-        }
+        let mapUrl = modeData.map 
+            ? `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(startLoc)}&destination=${encodeURIComponent(row.name)}&waypoints=${encodeURIComponent(modeData.map)}&travelmode=${mode}`
+            : `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(startLoc)}&destination=${encodeURIComponent(row.name)}&travelmode=${mode}`;
+
+        let warningHtml = row.hateWarnings.length > 0 ? `<div class="hate-warning">${row.hateWarnings.join('<br>')}</div>` : "";
+        const waypointTitle = (mode === "driving") ? "🚗 おすすめのSA·PA" : "🚄 おすすめの経由駅";
+        let waypointHtml = modeData.text ? `<div class="waypoint-box"><div class="waypoint-title">${waypointTitle}</div><div>${modeData.text}</div></div>` : "";
+
+        // ベストシーズン一致時の表示
+        let seasonBadgeHtml = (row.best_season === selectedSeason) ? `<div class="season-badge">✨ 今がベストシーズン！ (+5点加算)</div>` : "";
 
         const card = document.createElement("div");
         card.className = `rank-card rank-${i+1}`;
+        
+        const placeJson = JSON.stringify({ name: row.name, area: row.area, cost: finalCost, time: modeData.time, mapUrl: mapUrl });
+
         card.innerHTML = `
             <div>
                 <div class="rank-badge">第${i+1}位</div>
                 <p class="place-area">${row.area}</p>
                 <div class="place-name">${row.name}</div>
-                <div class="score-display">Score: ${row.score.toFixed(1)}</div>
-                <div class="info-display">目安: ${row.actual_cost.toLocaleString()}円 / 片道${row.actual_time}時間</div>
-                <div class="points-title">おすすめポイント:</div>
-                ${pointsHtml}
+                
+                ${seasonBadgeHtml}
+                <div class="score-display">総合マッチ度: ${row.totalScore.toFixed(1)}点</div>
+                
+                ${warningHtml}
+
+                <div style="color:#666; font-size:0.85rem; background:#f1f5f9; padding:6px; border-radius:4px;">
+                    💵 1人あたりの目安費用: <strong>${Math.round(finalCost).toLocaleString()}円</strong><br>
+                    ⏱️ 移動時間: <strong>${modeData.time}時間</strong>
+                </div>
+
+                ${waypointHtml}
             </div>
-            ${statusHtml}
+            <div class="card-actions">
+                <a href="${mapUrl}" target="_blank" class="btn-map">🗺️ ルート表示</a>
+                <button class="btn-keep" onclick='keepPlan(${placeJson})'>⭐ キープ</button>
+            </div>
         `;
         top3Grid.appendChild(card);
     }
-
-    // 他の候補（テーブル）のレンダリング
-    const tbody = document.querySelector("#rankingTable tbody");
-    tbody.innerHTML = "";
-    for (let i = 0; i < Math.min(10, scoredPlaces.length); i++) {
-        const row = scoredPlaces[i];
-        const tr = document.createElement("tr");
-        tr.innerHTML = `
-            <td><strong>${row.name}</strong></td>
-            <td>${row.area}</td>
-            <td>${row.actual_cost.toLocaleString()}円</td>
-            <td>${row.actual_time}時間</td>
-            <td style="font-weight:bold; color:#e67e22;">${row.score.toFixed(1)}</td>
-        `;
-        tbody.appendChild(tr);
-    }
-
-    // 結果部分までスムーズスクロール
     resultSection.scrollIntoView({ behavior: 'smooth' });
+}
+
+function keepPlan(planObj) {
+    let currentKeeps = JSON.parse(localStorage.getItem("travel_keeps")) || [];
+    if (currentKeeps.some(k => k.name === planObj.name)) { alert("既にキープされています！"); return; }
+    currentKeeps.push(planObj);
+    localStorage.setItem("travel_keeps", JSON.stringify(currentKeeps));
+    renderKeepList();
+    alert(`${planObj.name} を保存しました！`);
+}
+
+function deleteKeep(name) {
+    let currentKeeps = JSON.parse(localStorage.getItem("travel_keeps")) || [];
+    currentKeeps = currentKeeps.filter(k => k.name !== name);
+    localStorage.setItem("travel_keeps", JSON.stringify(currentKeeps));
+    renderKeepList();
+}
+
+function renderKeepList() {
+    const keepGrid = document.getElementById("keepGrid");
+    const keepStatus = document.getElementById("keep-status");
+    let currentKeeps = JSON.parse(localStorage.getItem("travel_keeps")) || [];
+
+    keepGrid.innerHTML = "";
+    if (currentKeeps.length === 0) { keepStatus.style.display = "block"; return; }
+    else { keepStatus.style.display = "none"; }
+
+    currentKeeps.forEach(k => {
+        const div = document.createElement("div"); div.className = "keep-card";
+        div.innerHTML = `
+            <div>
+                <p style="font-size:0.75rem; color:#64748b; margin:0;">${k.area}</p>
+                <h3 style="margin:5px 0 10px 0;">${k.name}</h3>
+                <p style="font-size:0.8rem; color:#475569; margin-bottom:15px;">1人あたり: ${Math.round(k.cost).toLocaleString()}円 / ${k.time}時間</p>
+            </div>
+            <div style="display:flex; gap:10px;"><a href="${k.mapUrl}" target="_blank" class="btn-map" style="background-color:#007aff;">🗺️ 地図を表示</a></div>
+            <button class="btn-delete" onclick="deleteKeep('${k.name}')">🗑️ 削除</button>
+        `;
+        keepGrid.appendChild(div);
+    });
 }
 </script>
 
