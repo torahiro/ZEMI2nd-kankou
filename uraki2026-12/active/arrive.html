@@ -1,0 +1,639 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI旅プロデュースナビゲーター - ハイブリッド完全版</title>
+    <style>
+        body {
+            font-family: 'Helvetica Neue', Arial, "Hiragino Kaku Gothic ProN", "Hiragino Sans", Meiryo, sans-serif;
+            padding: 40px 20px;
+            background-color: #f5f7fa;
+            color: #333;
+            margin: 0;
+            line-height: 1.6;
+        }
+        .container { max-width: 900px; margin: 0 auto; }
+        header { text-align: center; margin-bottom: 40px; }
+        h1 { color: #2b5c8f; font-size: 2.3rem; margin-bottom: 10px; }
+        .subtitle { color: #64748b; font-size: 1rem; }
+
+        /* 3ステップ切り替え用 */
+        .page { display: none; background: white; padding: 40px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); animation: fadeIn 0.4s ease-in-out forwards; }
+        .page.active { display: block; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+
+        .step-indicator { display: flex; justify-content: center; gap: 15px; margin-bottom: 30px; font-weight: bold; color: #cbd5e1; font-size: 0.9rem; }
+        .step-indicator .active { color: #007aff; border-bottom: 2px solid #007aff; }
+
+        .section { margin-bottom: 25px; }
+        h2 { font-size: 1.1rem; margin-bottom: 15px; color: #2b5c8f; border-left: 4px solid #2b5c8f; padding-left: 10px; }
+        .display-value { font-size: 1.8rem; font-weight: bold; color: #007aff; margin-bottom: 15px; text-align: center; }
+        .slider { -webkit-appearance: none; width: 100%; height: 8px; border-radius: 4px; background: #e4e7eb; outline: none; }
+        .slider::-webkit-slider-thumb { -webkit-appearance: none; width: 24px; height: 24px; border-radius: 50%; background: #007aff; cursor: pointer; }
+        
+        .location-box { display: flex; gap: 10px; margin-bottom: 10px; }
+        .input-text { flex: 1; padding: 12px; border: 1px solid #e2e8f0; border-radius: 8px; font-size: 1rem; box-sizing: border-box; }
+        .btn-geo { background-color: #e2e8f0; border: none; padding: 0 15px; border-radius: 8px; cursor: pointer; font-size: 0.9rem; font-weight: bold; }
+
+        /* モード切り替えタブのスタイル */
+        .mode-switcher { display: flex; gap: 10px; margin-bottom: 20px; }
+        .mode-btn { flex: 1; padding: 12px; border: 1px solid #e2e8f0; background: #fff; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 0.95rem; text-align: center; transition: all 0.2s; }
+        .mode-btn.active { border-color: #007aff; background-color: #eff6ff; color: #007aff; }
+
+        .flex-inputs { display: flex; gap: 15px; }
+        .flex-inputs > div { flex: 1; }
+        .select-input { width: 100%; padding: 12px; border: 1px solid #e2e8f0; border-radius: 8px; font-size: 1rem; background: white; cursor: pointer; }
+
+        .transport-group { display: flex; gap: 10px; flex-wrap: wrap; }
+        .transport-label { flex: 1; min-width: 140px; display: flex; align-items: center; justify-content: center; gap: 6px; padding: 12px; border: 1px solid #e2e8f0; border-radius: 8px; cursor: pointer; font-weight: bold; background: #fff; font-size: 0.9rem; }
+        .transport-label input { width: 18px; height: 18px; }
+        .transport-label:has(input:checked) { border-color: #007aff; background-color: #eff6ff; color: #007aff; }
+
+        .preference-table { width: 100%; border-collapse: collapse; }
+        .preference-table td { padding: 8px 4px; font-size: 0.95rem; }
+        .select-weight { width: 100%; padding: 8px; border: 1px solid #e2e8f0; border-radius: 6px; background-color: #fff; cursor: pointer; }
+
+        .btn-primary { background-color: #007aff; color: white; border: none; padding: 14px 40px; font-size: 1.1rem; font-weight: bold; border-radius: 30px; cursor: pointer; width: 100%; margin-top: 10px; box-shadow: 0 4px 6px rgba(0, 122, 255, 0.2); }
+        .btn-secondary { background-color: #64748b; color: white; border: none; padding: 12px 30px; font-size: 1rem; border-radius: 30px; cursor: pointer; margin-top: 20px; }
+
+        /* ステップ2: 旅先提案カード */
+        .top3-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; margin-bottom: 30px; }
+        .rank-card { background: #fff; border-radius: 12px; padding: 25px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); border-top: 6px solid #007aff; display: flex; flex-direction: column; justify-content: space-between; }
+        .rank-card.rank-1 { border-top-color: #f59e0b; }
+        .rank-card.rank-2 { border-top-color: #94a3b8; }
+        .rank-card.rank-3 { border-top-color: #b45309; }
+        .rank-badge { font-size: 1.1rem; font-weight: bold; color: #64748b; }
+        .place-name { font-size: 1.5rem; font-weight: bold; margin: 5px 0 10px 0; }
+        .score-display { font-size: 1.2rem; color: #e67e22; font-weight: bold; margin-bottom: 12px; }
+        .season-badge { display: inline-block; background-color: #ffedd5; color: #c2410c; padding: 2px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: bold; margin-bottom: 10px; }
+        .btn-select-place { background-color: #007aff; color: white; border: none; padding: 10px; font-size: 0.9rem; font-weight: bold; border-radius: 6px; cursor: pointer; text-align: center; margin-bottom: 8px; }
+        
+        .btn-card-keep { background-color: #f59e0b; color: white; border: none; padding: 10px; font-size: 0.9rem; font-weight: bold; border-radius: 6px; cursor: pointer; text-align: center; }
+        .btn-card-keep:hover { background-color: #d97706; }
+
+        /* ステップ3: 寄り道カード */
+        .waypoint-card { display: flex; align-items: flex-start; gap: 15px; border: 1px solid #e2e8f0; padding: 20px; border-radius: 10px; margin-bottom: 15px; background: #f8fafc; cursor: pointer; }
+        .waypoint-card:hover { border-color: #007aff; background: #eff6ff; }
+        .waypoint-card input[type="checkbox"] { width: 22px; height: 22px; margin-top: 3px; cursor: pointer; }
+        .waypoint-name { font-weight: bold; font-size: 1.1rem; color: #1e293b; margin-bottom: 5px; }
+        .waypoint-desc { font-size: 0.9rem; color: #475569; }
+        .tag { font-size: 0.75rem; background: #e0f2fe; color: #0369a1; padding: 2px 6px; border-radius: 4px; font-weight: bold; margin-right: 5px; }
+
+        .summary-box { background: #f1f5f9; padding: 20px; border-radius: 10px; margin-top: 30px; font-size: 0.95rem; }
+        .hate-warning { background-color: #fef2f2; border: 1px solid #fca5a5; color: #991b1b; padding: 8px; border-radius: 6px; font-size: 0.8rem; margin-bottom: 10px; }
+
+        /* キープ一覧エリア */
+        .keep-section { background: white; border-radius: 12px; padding: 30px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); margin-top: 40px; }
+        .keep-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 20px; margin-top: 20px; }
+        .keep-card { border: 1px solid #e2e8f0; padding: 20px; border-radius: 8px; background: #fafafa; display: flex; flex-direction: column; justify-content: space-between; position: relative; }
+        .btn-delete { position: absolute; top: 15px; right: 15px; background: none; border: none; color: #ef4444; cursor: pointer; font-size: 0.85rem; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <header>
+        <h1>AI旅プロデュースナビゲーター</h1>
+        <p class="subtitle">「目的地の直接設定 ＆ 診断自動提案 ハイブリッド型」×「寄り道カスタム」</p>
+    </header>
+
+    <div class="step-indicator">
+        <span id="indicator-1" class="active">1. 条件スタンス入力</span>
+        <span>➔</span>
+        <span id="indicator-2">2. 旅先の決定</span>
+        <span>➔</span>
+        <span id="indicator-3">3. 寄り道カスタム</span>
+    </div>
+
+    <div id="page-step1" class="page active">
+        
+        <div class="section">
+            <h2>旅先の決め方</h2>
+            <div class="mode-switcher">
+                <button id="mode-recommend" class="mode-btn active" onclick="switchInputMode('recommend')">🎯 AIにおまかせ（旅先を診断・提案）</button>
+                <button id="mode-direct" class="mode-btn" onclick="switchInputMode('direct')">📍 目的地を指定（寄り道だけ計画）</button>
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>出発地 と 到着地（目的地）</h2>
+            <div class="location-box">
+                <input type="text" id="start-location" class="input-text" value="東京駅" placeholder="出発地（例：東京駅、新宿、現在地）">
+                <button class="btn-geo" onclick="getGeoLocation()">📍GPS</button>
+            </div>
+            <div id="end-location-container" style="display: none;">
+                <input type="text" id="end-location" class="input-text" value="金沢駅" placeholder="到着地を入力してください（例：金沢駅、京都駅、熱海温泉）">
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>出発時期 と 旅行人数・同行者世代</h2>
+            <div class="flex-inputs" style="margin-bottom:10px;">
+                <div>
+                    <select id="travel-month" class="select-input">
+                        <option value="春">3月〜5月（春旅）</option>
+                        <option value="夏">6月〜8月（夏旅）</option>
+                        <option value="秋">9月〜11月（秋旅）</option>
+                        <option value="冬" selected>12月〜2月（冬旅）</option>
+                    </select>
+                </div>
+                <div>
+                    <select id="travel-members" class="select-input">
+                        <option value="1" selected>1人（ソロ旅）</option>
+                        <option value="2">2人旅</option>
+                        <option value="3">3人旅</option>
+                        <option value="4">4人以上</option>
+                    </select>
+                </div>
+            </div>
+            <select id="travel-generation" class="select-input">
+                <option value="young" selected>若者・学生</option>
+                <option value="adult">大人（20〜50代）</option>
+                <option value="senior">シニア（60代〜）</option>
+                <option value="child">子連れ・ファミリー</option>
+            </select>
+        </div>
+
+        <div class="section">
+            <h2>移動手段</h2>
+            <div class="transport-group">
+                <label class="transport-label"><input type="radio" name="transport-mode" value="any" checked> 🌍 制限なし（すべて比較）</label>
+                <label class="transport-label"><input type="radio" name="transport-mode" value="transit"> 🚄 新幹線・特急</label>
+                <label class="transport-label"><input type="radio" name="transport-mode" value="bus"> 🚌 高速バス・夜行バス</label>
+                <label class="transport-label"><input type="radio" name="transport-mode" value="driving"> 🚗 自動車・ドライブ</label>
+            </div>
+        </div>
+
+        <div id="sliders-container">
+            <div class="section">
+                <h2>1人あたりの予算上限（費用制約）</h2>
+                <div class="display-value"><span id="budget-value">30,000</span>円</div>
+                <input type="range" id="budget-slider" class="slider" min="1000" max="100000" step="1000" value="30000">
+            </div>
+
+            <div class="section">
+                <h2>移動時間の上限（時間制約）</h2>
+                <div class="display-value"><span id="time-value">8</span>時間</div>
+                <input type="range" id="time-slider" class="slider" min="1" max="24" step="1" value="8">
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>こだわり・スタンス</h2>
+            <table class="preference-table">
+                <tr><td>🍴 ご当地グルメを堪能したい</td><td><select id="weight-gourmet" class="select-weight"><option value="1" selected>1: 重視する</option><option value="0.5">0.5: 軽視する</option><option value="0">0: 考慮しない</option><option value="-1">-1: 忌み嫌う</option></select></td></tr>
+                <tr><td>✨ イベント・ライブ目的</td><td><select id="weight-event" class="select-weight"><option value="1">1: 重視する</option><option value="0.5">0.5: 軽視する</option><option value="0" selected>0: 考慮しない</option><option value="-1">-1: 忌み嫌う</option></select></td></tr>
+                <tr><td>🏙️ 定番観光地を巡りたい</td><td><select id="weight-sightseeing" class="select-weight"><option value="1">1: 重視する</option><option value="0.5">0.5: 軽視する</option><option value="0">0: 考慮しない</option></select></td></tr>
+                <tr><td>👥 混雑（人混み）は避けたい</td><td><select id="weight-crowd" class="select-weight"><option value="0">0: 気にしない</option><option value="-1" selected>-1: 忌み嫌う</option></select></td></tr>
+            </table>
+        </div>
+
+        <button id="main-submit-btn" class="btn-primary" onclick="handleFormSubmit()">あなたに合う旅先を診断する ➔</button>
+    </div>
+
+    <div id="page-step2" class="page">
+        <h2>🎯 あなたの条件にマッチした旅先 TOP3</h2>
+        <p style="color:#64748b; font-size:0.88rem; margin-bottom:25px;">予算や移動時間の枠内で、最も満足度が高くなる移動手段を自動選定したおすすめプランです。</p>
+        
+        <div class="top3-grid" id="top3Grid"></div>
+
+        <div id="noResultsSection" style="display: none; text-align:center; color:#64748b; padding:20px;">
+            <h3>該当する旅行先がありません</h3>
+            <p>予算や移動時間の上限を広げて、もう一度試してください。</p>
+        </div>
+
+        <button class="btn-secondary" onclick="backToStep1()">🏃 条件を入力し直す</button>
+    </div>
+
+    <div id="page-step3" class="page">
+        <h2 id="route-title">東京駅 ➔ 金沢駅 へのルート</h2>
+        <p style="color:#64748b; font-size:0.88rem; margin-bottom:25px;">選択された移動手段に最適化されたおすすめの寄り道・休憩スポットです。</p>
+        
+        <div id="waypoint-proposals"></div>
+
+        <div class="summary-box">
+            <span style="font-weight: bold;">📋 確定した旅行スケジュール概要:</span>
+            <div id="plan-summary" style="margin-top: 10px; font-size: 0.9rem; color:#475569;"></div>
+        </div>
+
+        <div style="display: flex; gap: 15px;">
+            <button id="back-btn-step3" class="btn-secondary" onclick="handleStep3Back()">🔙 選定し直す</button>
+            <button class="btn-primary" style="flex: 1; margin-top: 20px; background-color: #22c55e; box-shadow: 0 4px 6px rgba(34, 197, 94, 0.2);" onclick="openFinalGoogleMap()">🗺️ カスタムルートをMapで開く</button>
+        </div>
+    </div>
+
+    <div class="keep-section">
+        <h2>⭐ キープした旅行プラン一覧</h2>
+        <div id="keep-status" style="color:#64748b; font-size:0.9rem;">まだキープしたプランはありません。</div>
+        <div class="keep-grid" id="keepGrid"></div>
+    </div>
+</div>
+
+<script>
+// マスタデータ
+const samplePlaces = [
+    { name: "熱海温泉", area: "東海", gourmet: 4, event: 3, sightseeing: 3, stay_time: 5, safety: 5, crowd: 4, best_season: "冬", keyword: "熱海", transit_cost: 15000, transit_time: 2, bus_cost: 3000, bus_time: 3.5, driving_cost: 8000, driving_time: 2.5 },
+    { name: "箱根湯本", area: "関東", gourmet: 4, event: 2, sightseeing: 4, stay_time: 5, safety: 5, crowd: 4, best_season: "冬", keyword: "箱根", transit_cost: 22000, transit_time: 1.5, bus_cost: 2500, bus_time: 2.5, driving_cost: 7000, driving_time: 2 },
+    { name: "仙台・松島", area: "東北", gourmet: 5, event: 4, sightseeing: 4, stay_time: 3, safety: 5, crowd: 2, best_season: "秋", keyword: "仙台", transit_cost: 28000, transit_time: 2.5, bus_cost: 4500, bus_time: 5.5, driving_cost: 18000, driving_time: 5 },
+    { name: "金沢・兼六園", area: "北陸", gourmet: 5, event: 3, sightseeing: 5, stay_time: 4, safety: 5, crowd: 3, best_season: "春", keyword: "金沢", transit_cost: 35000, transit_time: 3, bus_cost: 5000, bus_time: 7.5, driving_cost: 22000, driving_time: 6.5 },
+    { name: "京都・東山", area: "近畿", gourmet: 5, event: 4, sightseeing: 5, stay_time: 4, safety: 5, crowd: 5, best_season: "春", keyword: "京都", transit_cost: 45000, transit_time: 3.5, bus_cost: 5500, bus_time: 7, driving_cost: 22000, driving_time: 6 }
+];
+
+const waypointDatabase = [
+    { targetKeyword: "金沢", mode: "transit", name: "富山駅", desc: "新幹線の途中下車。駅ナカで宝石のような絶品『白えび丼』を堪能！", map_query: "富山駅" },
+    { targetKeyword: "金沢", mode: "bus", name: "横川SA（バス休憩予定地）", desc: "多くの高速バスが休憩に寄る定番SA。名物『峠の釜めし』をお土産に！", map_query: "横川SA" },
+    { targetKeyword: "金沢", mode: "driving", name: "有磯海SA", desc: "日本海を一望できる大パノラマ。海の幸グルメや美しい夕日は必見。", map_query: "有磯海SA" },
+    { targetKeyword: "京都", mode: "transit", name: "名古屋駅", desc: "ホームの『住よし』できしめんをサクッと食べるか、途中下車でひつまぶしを。", map_query: "名古屋駅" },
+    { targetKeyword: "京都", mode: "bus", name: "浜名湖SA（バス休憩予定地）", desc: "夜行・高速バスの休憩スポット。広大な浜名湖の夜景でリフレッシュ。", map_query: "浜名湖SA" },
+    { targetKeyword: "京都", mode: "driving", name: "海老名SA", desc: "日本一の規模を誇るSA。名物メロンパンや食べ歩きグルメの宝庫。", map_query: "海老名SA" },
+    { targetKeyword: "熱海", mode: "transit", name: "小田原駅", desc: "乗り換えついでに小田原城散策や守谷のあんパンがおすすめ！", map_query: "小田原駅" },
+    { targetKeyword: "熱海", mode: "bus", name: "海老名SA（バス休憩予定地）", desc: "東名高速バスの最初の休憩所。名物ぽるとがるの焼きたてメロンパンを確保！", map_query: "海老名SA" }
+];
+
+let currentDiagnosticResults = [];
+let selectedDestination = null;
+let currentInputMode = 'recommend'; // 'recommend' (診断) or 'direct' (直接入力)
+
+const budgetSlider = document.getElementById('budget-slider');
+const budgetDisplay = document.getElementById('budget-value');
+budgetSlider.addEventListener('input', (e) => { budgetDisplay.textContent = parseInt(e.target.value).toLocaleString(); });
+
+const timeSlider = document.getElementById('time-slider');
+const timeDisplay = document.getElementById('time-value');
+timeSlider.addEventListener('input', (e) => { timeDisplay.textContent = e.target.value; });
+
+document.addEventListener("DOMContentLoaded", renderKeepList);
+
+function getGeoLocation() {
+    const startInput = document.getElementById("start-location");
+    if (!navigator.geolocation) { return; }
+    navigator.geolocation.getCurrentPosition(
+        (p) => { startInput.value = `${p.coords.latitude},${p.coords.longitude}`; },
+        () => { startInput.value = "現在地"; }
+    );
+}
+
+/* ===================================================
+   💡【新設】診断モードと直接入力モードのUI表示切り替え
+   =================================================== */
+function switchInputMode(mode) {
+    currentInputMode = mode;
+    const btnRec = document.getElementById('mode-recommend');
+    const btnDir = document.getElementById('mode-direct');
+    const endContainer = document.getElementById('end-location-container');
+    const submitBtn = document.getElementById('main-submit-btn');
+
+    if (mode === 'direct') {
+        btnDir.classList.add('active');
+        btnRec.classList.remove('active');
+        endContainer.style.display = 'block'; // 到着地欄を表示
+        submitBtn.textContent = "この目的地までのルートを計画する ➔";
+    } else {
+        btnRec.classList.add('active');
+        btnDir.classList.remove('active');
+        endContainer.style.display = 'none'; // 到着地欄を隠す
+        submitBtn.textContent = "あなたに合う旅先を診断する ➔";
+    }
+}
+
+// 最初のボタンが押された時の振る舞い分岐
+function handleFormSubmit() {
+    if (currentInputMode === 'direct') {
+        // 直接入力モードの時は、診断(ステップ2)をジャンプしてステップ3へ直行
+        runDirectRoutePlanning();
+    } else {
+        // 診断モードの時はステップ2へ
+        goToStep2();
+    }
+}
+
+/* ===================================================
+   💡【新設ロジック】目的地を自分で直接入力した場合の処理
+   =================================================== */
+function runDirectRoutePlanning() {
+    const start = document.getElementById("start-location").value.trim() || "現在地";
+    const end = document.getElementById("end-location").value.trim();
+    let mode = document.querySelector('input[name="transport-mode"]:checked').value;
+
+    if (!end) { alert("到着地を入力してください。"); return; }
+    if (mode === 'any') { mode = 'transit'; } // 制限なしの場合は暫定で新幹線(公共交通)をベースにする
+
+    // 入力された文字（例：「金沢駅」）からDB照合用のキーワード（例：「金沢」）を生成・検索
+    let matchedKeyword = "直行";
+    samplePlaces.forEach(p => {
+        if (end.includes(p.keyword)) { matchedKeyword = p.keyword; }
+    });
+
+    // 目的地オブジェクトを即座に作成
+    selectedDestination = { 
+        name: end, 
+        keyword: matchedKeyword, 
+        cost: 0, 
+        time: 0, 
+        mode: mode, 
+        area: "指定エリア" 
+    };
+
+    // インジケーターを飛ばしてステップ3用の画面を展開
+    document.getElementById("page-step1").classList.remove("active");
+    document.getElementById("page-step3").classList.add("active");
+    document.getElementById(`indicator-1`).classList.remove("active");
+    document.getElementById(`indicator-3`).classList.add("active");
+
+    // 寄り道データベースの検索とレンダリング
+    renderWaypointProposals(start, end, matchedKeyword, mode);
+}
+
+
+function goToStep2() {
+    const maxBudget = parseInt(budgetSlider.value);
+    const maxTime = parseFloat(timeSlider.value);
+    const selectedSeason = document.getElementById("travel-month").value;
+    const memberCount = parseInt(document.getElementById("travel-members").value);
+    const generation = document.getElementById("travel-generation").value;
+    const userMode = document.querySelector('input[name="transport-mode"]:checked').value;
+
+    const weights = {
+        gourmet: parseFloat(document.getElementById("weight-gourmet").value),
+        event: parseFloat(document.getElementById("weight-event").value),
+        sightseeing: parseFloat(document.getElementById("weight-sightseeing").value),
+        stay_time: parseFloat(document.getElementById("weight-stay_time").value),
+        crowd: parseFloat(document.getElementById("weight-crowd").value)
+    };
+
+    if (generation === "senior") weights.stay_time = Math.max(weights.stay_time, 1);
+
+    currentDiagnosticResults = [];
+
+    samplePlaces.forEach(place => {
+        const availableModes = (userMode === "any") ? ["transit", "bus", "driving"] : [userMode];
+        let bestModeForPlace = null;
+        let lowestCostForPlace = Infinity;
+        let matchedTime = 0;
+
+        availableModes.forEach(m => {
+            let cost = (m === "driving") ? (place.driving_cost / memberCount) : place[`${m}_cost`];
+            let time = place[`${m}_time`];
+
+            if (cost <= maxBudget && time <= maxTime) {
+                if (cost < lowestCostForPlace) {
+                    lowestCostForPlace = cost;
+                    matchedTime = time;
+                    bestModeForPlace = m;
+                }
+            }
+        });
+
+        if (bestModeForPlace) {
+            let totalScore = 0;
+            let hateWarnings = [];
+
+            if (place.best_season === selectedSeason) totalScore += 5.0;
+
+            const constraints = [
+                { name: "グルメ",     val: place.gourmet,     w: weights.gourmet,     type: "plus" },
+                { name: "イベント",   val: place.event,       w: weights.event,       type: "plus" },
+                { name: "観光地",     val: place.sightseeing, w: weights.sightseeing, type: "plus" },
+                { name: "のんびり",   val: place.stay_time,    w: weights.stay_time,   type: "plus" },
+                { name: "混雑",       val: place.crowd,       w: weights.crowd,       type: "minus" }
+            ];
+
+            constraints.forEach(c => {
+                if (c.w === 1 || c.w === 0.5) {
+                    if (c.type === "plus") totalScore += c.val * (c.w * 2);
+                    else if (c.type === "minus") totalScore += (6 - c.val) * (c.w * 2);
+                } else if (c.w === -1) {
+                    if (c.type === "minus" && c.val >= 4) { totalScore -= 20; hateWarnings.push(`⚠️ ${c.name}が強めです`); }
+                }
+            });
+
+            currentDiagnosticResults.push({
+                ...place,
+                totalScore: totalScore,
+                hateWarnings: hateWarnings,
+                displayCost: lowestCostForPlace,
+                displayTime: matchedTime,
+                chosenMode: bestModeForPlace
+            });
+        }
+    });
+
+    currentDiagnosticResults.sort((a, b) => b.totalScore - a.totalScore);
+
+    const grid = document.getElementById("top3Grid");
+    const noResults = document.getElementById("noResultsSection");
+    grid.innerHTML = "";
+
+    if (currentDiagnosticResults.length === 0) {
+        grid.style.display = "none";
+        noResults.style.display = "block";
+    } else {
+        grid.style.display = "grid";
+        noResults.style.display = "none";
+
+        for (let i = 0; i < Math.min(3, currentDiagnosticResults.length); i++) {
+            const row = currentDiagnosticResults[i];
+            let warningHtml = row.hateWarnings.length > 0 ? `<div class="hate-warning">${row.hateWarnings.join('<br>')}</div>` : "";
+            let seasonHtml = (row.best_season === selectedSeason) ? `<div class="season-badge">✨ 今がベストシーズン！</div>` : "";
+
+            let modeLabel = "🚄 新幹線・特急";
+            if (row.chosenMode === "driving") modeLabel = "🚗 自動車・ドライブ";
+            if (row.chosenMode === "bus") modeLabel = "🚌 高速バス・夜行バス";
+
+            const card = document.createElement("div");
+            card.className = `rank-card rank-${i+1}`;
+            card.innerHTML = `
+                <div>
+                    <div class="rank-badge">第${i+1}位</div>
+                    <p style="font-size:0.75rem; color:#64748b; margin:0;">${row.area}</p>
+                    <div class="place-name">${row.name}</div>
+                    ${seasonHtml}
+                    <div class="score-display">マッチ度: ${row.totalScore.toFixed(1)}点</div>
+                    ${warningHtml}
+                    
+                    <div style="font-size:0.85rem; color:#007aff; font-weight:bold; margin-bottom:5px;">
+                        💡 推奨：${modeLabel}
+                    </div>
+                    <div style="font-size:0.85rem; color:#666; margin-bottom:15px;">
+                        目安予算: ${Math.round(row.displayCost).toLocaleString()}円 / 人<br>
+                        移動時間: ${row.displayTime}時間
+                    </div>
+                </div>
+                <button class="btn-select-place" onclick="goToStep3FromDiagnosis(${i})">ここに決める ➔</button>
+                <button class="btn-card-keep" onclick="keepPlanByIndex(${i})">⭐ キープ</button>
+            `;
+            grid.appendChild(card);
+        }
+    }
+
+    switchPage(1, 2);
+}
+
+// 診断結果から選んでステップ3に進む関数
+function goToStep3FromDiagnosis(index) {
+    const row = currentDiagnosticResults[index];
+    selectedDestination = { name: row.name, keyword: row.keyword, cost: row.displayCost, time: row.displayTime, mode: row.chosenMode, area: row.area };
+    
+    const start = document.getElementById("start-location").value.trim() || "現在地";
+    switchPage(2, 3);
+    renderWaypointProposals(start, row.name, row.keyword, row.chosenMode);
+}
+
+/* ===================================================
+   💡【共通化】寄り道候補を画面に生成するレンダリング処理
+   =================================================== */
+function renderWaypointProposals(start, end, keyword, mode) {
+    document.getElementById("route-title").textContent = `${start} ➔ ${end} へのルート`;
+
+    let matchedWaypoints = waypointDatabase.filter(wp => {
+        return keyword.includes(wp.targetKeyword) && wp.mode === mode;
+    });
+
+    const container = document.getElementById("waypoint-proposals");
+    container.innerHTML = "";
+
+    if (matchedWaypoints.length === 0) {
+        container.innerHTML = "<p style='color:#64748b;'>このルート上の寄り道・休憩スポットデータは登録されていません。目的地へ直行するルートを生成できます。</p>";
+    } else {
+        matchedWaypoints.forEach((wp, idx) => {
+            const card = document.createElement("div");
+            card.className = "waypoint-card";
+            card.setAttribute("onclick", `toggleCheckbox('wp-check-${idx}')`);
+            card.innerHTML = `
+                <input type="checkbox" id="wp-check-${idx}" value="${wp.map_query}" data-name="${wp.name}" onclick="event.stopPropagation(); updateSummary();">
+                <div class="waypoint-info">
+                    <div class="waypoint-name">${wp.name}</div>
+                    <div class="waypoint-desc">${wp.desc}</div>
+                </div>
+            `;
+            container.appendChild(card);
+        });
+    }
+    updateSummary();
+}
+
+// ステップ3の「戻る」ボタンの挙動分岐
+function handleStep3Back() {
+    if (currentInputMode === 'direct') {
+        // 直接入力モードの時はステップ1へ戻る
+        document.getElementById("page-step3").classList.remove("active");
+        document.getElementById("page-step1").classList.add("active");
+        document.getElementById(`indicator-3`).classList.remove("active");
+        document.getElementById(`indicator-1`).classList.add("active");
+    } else {
+        // 診断提案モードの時はステップ2へ戻る
+        backToStep2();
+    }
+}
+
+function toggleCheckbox(id) {
+    const cb = document.getElementById(id);
+    if(cb) { cb.checked = !cb.checked; updateSummary(); }
+}
+
+function updateSummary() {
+    if (!selectedDestination) return;
+    const start = document.getElementById("start-location").value.trim() || "現在地";
+    
+    let modeText = "🚄 新幹線・特急";
+    if (selectedDestination.mode === "driving") modeText = "🚗 車（ドライブ）";
+    if (selectedDestination.mode === "bus") modeText = "🚌 高速バス・夜行バス";
+
+    const checkboxes = document.querySelectorAll('#waypoint-proposals input[type="checkbox"]:checked');
+    let names = [];
+    checkboxes.forEach(cb => names.push(cb.getAttribute("data-name")));
+
+    let wpText = names.length > 0 ? `【休憩・寄り道】${names.join(" ➔ ")}` : "直行";
+
+    let costDisplayStr = selectedDestination.cost > 0 ? ` （目安費用: ${Math.round(selectedDestination.cost).toLocaleString()}円）` : "";
+
+    document.getElementById("plan-summary").innerHTML = `
+        • 目的地: <strong>${selectedDestination.name}</strong>${costDisplayStr}<br>
+        • 移動手段: ${modeText}<br>
+        • 全行程: ${start} ➔ ${wpText} ➔ ${selectedDestination.name}
+    `;
+}
+
+function generateMapUrl(start, end, mode, queries) {
+    let mapMode = (mode === "bus") ? "transit" : mode;
+    let base = "https://www.google.com/maps/dir/?api=1";
+    let url = `${base}&origin=${encodeURIComponent(start)}&destination=${encodeURIComponent(end)}&travelmode=${mapMode}`;
+    if (queries && queries.length > 0) {
+        url += `&waypoints=${queries.map(encodeURIComponent).join("|")}`;
+    }
+    return url;
+}
+
+function openFinalGoogleMap() {
+    if (!selectedDestination) return;
+    const start = document.getElementById("start-location").value.trim() || "現在地";
+    const checkboxes = document.querySelectorAll('#waypoint-proposals input[type="checkbox"]:checked');
+    let queries = [];
+    checkboxes.forEach(cb => queries.push(cb.value));
+
+    let mapUrl = generateMapUrl(start, selectedDestination.name, selectedDestination.mode, queries);
+    window.open(mapUrl, '_blank');
+}
+
+function keepPlanByIndex(index) {
+    const row = currentDiagnosticResults[index];
+    const start = document.getElementById("start-location").value.trim() || "現在地";
+    let mapUrl = generateMapUrl(start, row.name, row.chosenMode, []);
+
+    let planObj = { name: row.name, area: row.area, cost: row.displayCost, time: row.displayTime, mapUrl: mapUrl };
+    let currentKeeps = JSON.parse(localStorage.getItem("travel_keeps")) || [];
+    if (currentKeeps.some(k => k.name === planObj.name)) { alert("このプランは既にキープされています！"); return; }
+    currentKeeps.push(planObj);
+    localStorage.setItem("travel_keeps", JSON.stringify(currentKeeps));
+    renderKeepList();
+    alert(`${planObj.name} をキープ一覧に保存しました！`);
+}
+
+function deleteKeep(name) {
+    let currentKeeps = JSON.parse(localStorage.getItem("travel_keeps")) || [];
+    currentKeeps = currentKeeps.filter(k => k.name !== name);
+    localStorage.setItem("travel_keeps", JSON.stringify(currentKeeps));
+    renderKeepList();
+}
+
+function renderKeepList() {
+    const keepGrid = document.getElementById("keepGrid");
+    const keepStatus = document.getElementById("keep-status");
+    let currentKeeps = JSON.parse(localStorage.getItem("travel_keeps")) || [];
+
+    keepGrid.innerHTML = "";
+    if (currentKeeps.length === 0) { keepStatus.style.display = "block"; return; }
+    else { keepStatus.style.display = "none"; }
+
+    currentKeeps.forEach(k => {
+        const div = document.createElement("div"); 
+        div.className = "keep-card";
+        div.innerHTML = `
+            <div>
+                <p style="font-size:0.75rem; color:#64748b; margin:0;">${k.area}</p>
+                <h3 style="margin:5px 0 10px 0;">${k.name}</h3>
+                <p style="font-size:0.8rem; color:#475569; margin-bottom:15px;">目安: ${Math.round(k.cost) > 0 ? Math.round(k.cost).toLocaleString() + '円' : '要確認'} / ${k.time}時間</p>
+            </div>
+            <div style="display:flex; gap:10px;">
+                <a href="${k.mapUrl}" target="_blank" class="btn-map" style="background-color:#007aff; text-decoration:none; color:white; padding:10px; font-size:0.85rem; font-weight:bold; border-radius:6px; flex:1; text-align:center;">🗺️ 地図を表示</a>
+            </div>
+            <button class="btn-delete" onclick="deleteKeep('${k.name}')">🗑️ 削除</button>
+        `;
+        keepGrid.appendChild(div);
+    });
+}
+
+function switchPage(from, to) {
+    document.getElementById(`page-step${from}`).classList.remove("active");
+    document.getElementById(`page-step${to}`).classList.add("active");
+    document.getElementById(`indicator-${from}`).classList.remove("active");
+    document.getElementById(`indicator-${to}`).classList.add("active");
+}
+
+function backToStep1() { switchPage(2, 1); }
+function backToStep2() { switchPage(3, 2); }
+</script>
+
+</body>
+</html>
