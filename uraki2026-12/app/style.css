@@ -1,0 +1,105 @@
+body {
+    font-family: 'Helvetica Neue', Arial, "Hiragino Kaku Gothic ProN", sans-serif;
+    padding: 40px 20px;
+    background-color: #f5f7fa;
+    color: #333;
+    margin: 0;
+    line-height: 1.6;
+}
+.container { max-width: 800px; margin: 0 auto; }
+header { text-align: center; margin-bottom: 40px; }
+h1 { color: #2b5c8f; font-size: 2.3rem; margin-bottom: 10px; }
+.subtitle { color: #64748b; font-size: 1rem; }
+
+.card { background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); margin-bottom: 25px; }
+.section-title { font-size: 1.2rem; margin-bottom: 20px; color: #2b5c8f; border-left: 4px solid #2b5c8f; padding-left: 10px; font-weight: bold; }
+
+.flex-inputs { display: flex; gap: 15px; margin-bottom: 15px; flex-wrap: wrap; }
+.flex-inputs > div { flex: 1; min-width: 200px; }
+.form-group { margin-bottom: 15px; }
+label { font-weight: bold; display: block; margin-bottom: 5px; }
+
+.location-box { display: flex; gap: 8px; width: 100%; }
+.input-text, .select-input, .textarea-input {
+    width: 100%; padding: 12px; border: 1px solid #e2e8f0; border-radius: 8px; font-size: 1rem; box-sizing: border-box;
+}
+.btn-geo { background-color: #e2e8f0; border: none; padding: 0 16px; border-radius: 8px; cursor: pointer; font-weight: bold; color: #334155; }
+
+.radio-group { display: flex; gap: 15px; margin-bottom: 10px; flex-wrap: wrap; }
+.radio-label { display: flex; align-items: center; gap: 6px; font-weight: bold; cursor: pointer; }
+
+.slider-box { margin-bottom: 20px; }
+.slider-display { font-size: 1.5rem; font-weight: bold; color: #007aff; text-align: center; margin-bottom: 5px; }
+.slider { width: 100%; height: 8px; border-radius: 4px; background: #e4e7eb; outline: none; }
+
+.btn-primary {
+    background-color: #007aff; color: white; border: none; padding: 14px 40px; font-size: 1.1rem;
+    font-weight: bold; border-radius: 30px; cursor: pointer; width: 100%; margin-top: 10px; margin-bottom: 25px;
+    box-shadow: 0 4px 6px rgba(0, 122, 255, 0.2);
+}
+
+/* こだわり・スタンス グリッド構造 */
+.preference-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 15px;
+}
+
+.pref-item {
+    background: #f8fafc;
+    padding: 12px;
+    border-radius: 8px;
+    border: 1px solid #e2e8f0;
+}
+
+.pref-item label {
+    font-size: 0.85rem;
+    color: #334155;
+    margin-bottom: 6px;
+}
+
+.pref-select {
+    width: 100%;
+    padding: 6px 10px;
+    border-radius: 6px;
+    border: 1px solid #cbd5e1;
+    font-size: 0.9rem;
+    background-color: white;
+}
+
+.top3-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 15px; margin-top: 15px; }
+.rank-card { background: #fafbfc; border-radius: 10px; padding: 20px; border: 1px solid #e2e8f0; border-top: 5px solid #007aff; display: flex; flex-direction: column; justify-content: space-between; }
+.score-display { color: #e67e22; font-weight: bold; margin-bottom: 10px; }
+.btn-select-place { background-color: #007aff; color: white; border: none; padding: 8px; border-radius: 6px; cursor: pointer; font-weight: bold; }
+
+.wp-item { background: #f8fafc; border: 1px solid #e2e8f0; padding: 15px; border-radius: 8px; margin-bottom: 10px; display: flex; gap: 12px; cursor: pointer; }
+.add-wp-form { display: flex; gap: 10px; margin-top: 10px; }
+.btn-add { background-color: #334155; color: white; border: none; padding: 0 20px; border-radius: 8px; font-weight: bold; cursor: pointer; }
+.custom-tags { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.custom-tag { background: #e2e8f0; padding: 6px 12px; border-radius: 20px; font-size: 0.85rem; display: flex; align-items: center; gap: 6px; }
+
+.divider { border-top: 2px solid #e2e8f0; margin-top: 30px; padding-top: 20px; }
+.day-section { margin-top: 20px; background-color: #f8fafc; padding: 20px; border-radius: 8px; }
+.timeline-item { display: flex; gap: 20px; margin-bottom: 15px; }
+.tl-time { width: 60px; font-weight: bold; font-size: 1.1rem; color: #1e293b; text-align: right; }
+.tl-badge { width: 12px; height: 12px; border-radius: 50%; background: #007aff; margin-top: 6px; flex-shrink: 0; }
+.tl-card { flex: 1; padding: 12px 15px; border-radius: 8px; font-size: 0.95rem; }
+.tl-card.info { background-color: #eff6ff; color: #1e40af; border-left: 4px solid #3b82f6; }
+.tl-card.warning { background-color: #fefce8; color: #713f12; border-left: 4px solid #eab308; }
+.tl-card.success { background-color: #f0fdf4; color: #166534; border-left: 4px solid #22c55e; }
+.tl-arrow { text-align: center; color: #0284c7; font-size: 0.9rem; margin: -5px 0 5px 65px; font-weight: bold; background: #e0f2fe; padding: 4px; border-radius: 6px; display: inline-block; }
+
+.btn-day-map { background-color: #0284c7; color: white; text-align: center; text-decoration: none; display: block; padding: 10px; border-radius: 6px; font-weight: bold; margin-top: 10px; }
+
+.performance-box { display: flex; gap: 15px; margin-top: 15px; flex-wrap: wrap; }
+.perf-card { flex: 1; min-width: 180px; background: #fdfefe; border: 2px solid #e2e8f0; border-radius: 10px; padding: 15px; text-align: center; }
+.perf-card.cost-style { border-color: #f59e0b; background-color: #fffbeb; }
+.perf-card.time-style { border-color: #06b6d4; background-color: #ecfeff; }
+.perf-card.bench-style { border-color: #8b5cf6; background-color: #f3e8ff; }
+.perf-num { font-size: 1.5rem; font-weight: 900; }
+.cost-style .perf-num { color: #d97706; }
+.time-style .perf-num { color: #0891b2; }
+.bench-style .perf-num { color: #7c3aed; }
+
+.debug-box { background-color: #f1f5f9; padding: 12px; border-radius: 8px; margin-top: 10px; font-size: 0.85rem; border: 1px dashed #cbd5e1; }
+.review-summary { font-size: 0.8rem; color: #4b5563; background: #f3f4f6; padding: 8px; border-radius: 6px; margin: 5px 0; border-left: 3px solid #10b981; }

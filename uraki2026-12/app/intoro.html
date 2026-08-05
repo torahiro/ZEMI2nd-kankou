@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI旅プロデュースナビゲーター</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="container">
+    <header>
+        <h1>AI旅プロデュースナビゲーター</h1>
+        <p class="subtitle">多目的制約充足＆リアル感情分析統合プラットフォーム</p>
+    </header>
+
+    <!-- Step-1: 基本条件 -->
+    <section class="card">
+        <div class="section-title">1. 旅の基本条件・資源制約を設定</div>
+        <div class="flex-inputs">
+            <div>
+                <label>🛫 出発地</label>
+                <div class="location-box">
+                    <input type="text" id="start-location" class="input-text" value="東京駅">
+                    <button class="btn-geo" id="btn-gps">📍GPS取得</button>
+                </div>
+            </div>
+            <div>
+                <label>📍 目的地（空欄ならAI提案）</label>
+                <input type="text" id="end-location" class="input-text" placeholder="例：金沢駅、熱海温泉など">
+            </div>
+        </div>
+
+        <div class="flex-inputs">
+            <div>
+                <label>📅 出発時期</label>
+                <select id="travel-month" class="select-input">
+                    <option value="春">3月〜5月（春旅）</option>
+                    <option value="夏">6月〜8月（夏旅）</option>
+                    <option value="秋">9月〜11月（秋旅）</option>
+                    <option value="冬" selected>12月〜2月（冬旅）</option>
+                </select>
+            </div>
+            <div>
+                <label>👥 旅行人数</label>
+                <input type="number" id="travel-members" class="select-input" min="1" max="10" value="1">
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label>移動手段の選択（経路制約条件）</label>
+            <select id="transport-mode" class="select-input">
+                <option value="any">制限なし（すべて比較して最適化）</option>
+                <option value="transit">新幹線・特急</option>
+                <option value="bus">高速バス・夜行バス</option>
+                <option value="driving">自動車・ドライブ</option>
+            </select>
+        </div>
+
+        <div class="form-group">
+            <label>⏱️ 時間資源制約の上限（期間）</label>
+            <div class="radio-group">
+                <label class="radio-label"><input type="radio" name="duration-type" value="hours" checked> 日帰り・時間単位（1〜12時間）</label>
+                <label class="radio-label"><input type="radio" name="duration-type" value="days"> 宿泊・日数単位（1〜7日間）</label>
+            </div>
+            <div class="slider-box">
+                <div class="slider-display"><span id="duration-value">8</span><span id="duration-unit">時間</span></div>
+                <input type="range" id="duration-slider" class="slider" min="1" max="12" value="8">
+            </div>
+        </div>
+
+        <div class="slider-box">
+            <label>💰 費用資源制約の上限（1人あたり総予算）</label>
+            <div class="slider-display"><span id="budget-value">30,000</span>円</div>
+            <input type="range" id="budget-slider" class="slider" min="1000" max="300000" step="5000" value="30000">
+        </div>
+    </section>
+
+    <!-- Step-4設定: ピーク設定 -->
+    <section class="card">
+        <div class="section-title">2. 旅の「見どころ・ピーク」設定（行程最適化）</div>
+        <div class="radio-group">
+            <label class="radio-label"><input type="radio" name="plan-peak" value="early" checked> 🌅 前半ピーク</label>
+            <label class="radio-label"><input type="radio" name="plan-peak" value="middle"> ☀️ 中盤ピーク</label>
+            <label class="radio-label"><input type="radio" name="plan-peak" value="late"> 🌆 後半ピーク</label>
+        </div>
+    </section>
+
+    <!-- Step-2設定: 自然言語解析 -->
+    <section class="card">
+        <div class="section-title">3. 旅の気分・動機（自然言語解析）</div>
+        <textarea id="user-text-intent" class="textarea-input" rows="3" placeholder="例：美味しいカニや海の幸をたくさん食べて、静かな温泉でゆっくり日頃の疲れを癒やしたい。人混みは嫌だな。"></textarea>
+        <div id="analysis-debug-area" class="debug-box" style="display:none;">
+            <strong>🔍 抽出された潜在的嗜好ベクトル (式(1)):</strong>
+            <div id="vector-output"></div>
+        </div>
+    </section>
+
+    <!-- こだわり・スタンス（多目的重み付け） -->
+    <section class="card">
+        <div class="section-title">4. こだわり・スタンス（多目的重み付け詳細設定）</div>
+        <p class="subtitle" style="margin-bottom:15px; font-size:0.85rem;">各項目の重要度を選択してください ( 1: 重視 | 0.5: 軽視 | 0: 考慮しない | -1: 避ける )</p>
+        
+        <div class="preference-grid">
+            <div class="pref-item">
+                <label>🏷️ 割引・クーポン利用</label>
+                <select class="pref-select" data-key="discount">
+                    <option value="1">1: 重視する</option>
+                    <option value="0.5">0.5: 軽視する</option>
+                    <option value="0" selected>0: 考慮しない</option>
+                    <option value="-1">-1: 避ける</option>
+                </select>
+            </div>
+
+            <div class="pref-item">
+                <label>🚶 混雑回避</label>
+                <select class="pref-select" data-key="avoid_crowd">
+                    <option value="1">1: 重視する</option>
+                    <option value="0.5">0.5: 軽視する</option>
+                    <option value="0" selected>0: 考慮しない</option>
+                    <option value="-1">-1: 避ける</option>
+                </select>
+            </div>
+
+            <div class="pref-item">
+                <label>祭 イベント・お祭り</label>
+                <select class="pref-select" data-key="event">
+                    <option value="1">1: 重視する</option>
+                    <option value="0.5">0.5: 軽視する</option>
+                    <option value="0" selected>0: 考慮しない</option>
+                    <option value="-1">-1: 避ける</option>
+                </select>
+            </div>
+
+            <div class="pref-item">
+                <label>🛡️ 治安・安全性</label>
+                <select class="pref-select" data-key="safety">
+                    <option value="1">1: 重視する</option>
+                    <option value="0.5">0.5: 軽視する</option>
+                    <option value="0" selected>0: 考慮しない</option>
+                    <option value="-1">-1: 避ける</option>
+                </select>
+            </div>
+
+            <div class="pref-item">
+                <label>🏯 主要観光名所巡り</label>
+                <select class="pref-select" data-key="sightseeing">
+                    <option value="1">1: 重視する</option>
+                    <option value="0.5">0.5: 軽視する</option>
+                    <option value="0" selected>0: 考慮しない</option>
+                    <option value="-1">-1: 避ける</option>
+                </select>
+            </div>
+
+            <div class="pref-item">
+                <label>🍣 グルメ堪能</label>
+                <select class="pref-select" data-key="gourmet">
+                    <option value="1">1: 重視する</option>
+                    <option value="0.5">0.5: 軽視する</option>
+                    <option value="0" selected>0: 考慮しない</option>
+                    <option value="-1">-1: 避ける</option>
+                </select>
+            </div>
+
+            <div class="pref-item">
+                <label>⚡ 過密日程（弾丸）</label>
+                <select class="pref-select" data-key="packed_schedule">
+                    <option value="1">1: 重視する</option>
+                    <option value="0.5">0.5: 軽視する</option>
+                    <option value="0" selected>0: 考慮しない</option>
+                    <option value="-1">-1: 避ける</option>
+                </select>
+            </div>
+
+            <div class="pref-item">
+                <label>♨️ ゆったり観光（長め滞在）</label>
+                <select class="pref-select" data-key="relax_schedule">
+                    <option value="1">1: 重視する</option>
+                    <option value="0.5">0.5: 軽視する</option>
+                    <option value="0" selected>0: 考慮しない</option>
+                    <option value="-1">-1: 避ける</option>
+                </select>
+            </div>
+
+            <div class="pref-item">
+                <label>🌸 季節の旬・特別体験</label>
+                <select class="pref-select" data-key="seasonal">
+                    <option value="1">1: 重視する</option>
+                    <option value="0.5">0.5: 軽視する</option>
+                    <option value="0" selected>0: 考慮しない</option>
+                    <option value="-1">-1: 避ける</option>
+                </select>
+            </div>
+
+            <div class="pref-item">
+                <label>聖地 アニメ・歴史聖地</label>
+                <select class="pref-select" data-key="pilgrimage">
+                    <option value="1">1: 重視する</option>
+                    <option value="0.5">0.5: 軽視する</option>
+                    <option value="0" selected>0: 考慮しない</option>
+                    <option value="-1">-1: 避ける</option>
+                </select>
+            </div>
+        </div>
+    </section>
+
+    <button id="btn-submit" class="btn-primary">制約充足＆パーソナライズド診断を実行 ➔</button>
+
+    <!-- Step-3出力: 診断結果 -->
+    <section class="card" id="diagnosis-section" style="display:none;">
+        <div class="section-title">Step-3: 多目的制約充足による最適目的地 TOP3</div>
+        <div class="top3-grid" id="top3Grid"></div>
+    </section>
+
+    <!-- Step-4〜6: 行程・しおり生成 -->
+    <section class="card" id="custom-section" style="display:none;">
+        <div class="section-title">Step-4〜6: 効率的寄り道設計 ➔ 旅行しおりの自動生成</div>
+        <h3 id="route-subtitle"></h3>
+        
+        <div id="recommended-waypoints-area"></div>
+
+        <div class="add-wp-container">
+            <label>💡 自由な経由地・目的地の追加:</label>
+            <div class="add-wp-form">
+                <input type="text" id="new-wp-input" class="input-text" placeholder="例：ひがし茶屋街、兼六園など">
+                <button class="btn-add" id="btn-add-wp">追加</button>
+            </div>
+            <div class="custom-tags" id="customWaypointsTags"></div>
+        </div>
+
+        <div class="divider">
+            <div class="section-title">📊 プランのタイパ・コスパ・AI処理パフォーマンス (Step-5)</div>
+            <div class="performance-box" id="performance-area"></div>
+        </div>
+
+        <div class="divider">
+            <div class="section-title">生成された旅行しおり（移動時間＆ピーク明示） (Step-6)</div>
+            <div id="timeline-area"></div>
+        </div>
+    </section>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
