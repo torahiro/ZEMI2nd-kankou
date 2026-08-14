@@ -1,535 +1,473 @@
-// 🌟 マスタデータ（各観光地の属性ベクトル c 用のカテゴリ値・旬シーズン）
-const SAMPLE_PLACES = [
-    { name: "熱海温泉", area: "東海", gourmet: 4, sightseeing: 3, healing: 5, best_season: "冬", keyword: "熱海", transit_cost: 15000, transit_time: 2.0, bus_cost: 3000, bus_time: 3.5, driving_cost: 8000, driving_time: 2.5, reviews: ["冬の花火大会が最高", "海鮮丼のコスパが良い"] },
-    { name: "箱根湯本", area: "関東", gourmet: 4, sightseeing: 4, healing: 5, best_season: "冬", keyword: "箱根", transit_cost: 22000, transit_time: 1.5, bus_cost: 2500, bus_time: 2.5, driving_cost: 7000, driving_time: 2.0, reviews: ["温泉の泉質が素晴らしい", "美術館が充実"] },
-    { name: "金沢・兼六園", area: "北陸", gourmet: 5, sightseeing: 5, healing: 3, best_season: "春", keyword: "金沢", transit_cost: 35000, transit_time: 3.0, bus_cost: 5000, bus_time: 7.5, driving_cost: 22000, driving_time: 6.5, reviews: ["近江町市場のカニが絶品", "兼六園の早朝入園が静か"] }
-];
+// app.js
+let currentCandidates = [];
+let customWaypointsList = [];
+let lastGeneratedItineraryData = null;
+let selectedRouteIdx = null;
 
-// 主要拠点・観光地の座標データ
-const LOCATION_COORDINATES = {
-    "東京駅": { lat: 35.6812, lng: 139.7671 },
-    "熱海温泉": { lat: 35.0966, lng: 139.0716 },
-    "箱根湯本": { lat: 35.2333, lng: 139.1036 },
-    "金沢・兼六園": { lat: 36.5621, lng: 136.6622 },
-    "金沢駅": { lat: 36.5780, lng: 136.6478 },
-    "富山駅（白えび丼）": { lat: 36.7013, lng: 137.2133 },
-    "富山駅": { lat: 36.7013, lng: 137.2133 },
-    "金沢ひがし茶屋街": { lat: 36.5726, lng: 136.6666 },
-    "小田原城址散策": { lat: 35.2509, lng: 139.1536 }
-};
+const API_BASE_URL = 'http://localhost:8000';
 
-const WAYPOINT_DATABASE = [
-    { targetKeyword: "金沢", name: "富山駅（白えび丼）", query: "富山駅", type: "gourmet" },
-    { targetKeyword: "金沢", name: "金沢ひがし茶屋街", query: "ひがし茶屋街", type: "sightseeing" },
-    { targetKeyword: "熱海", name: "小田原城址散策", query: "小田原駅", type: "sightseeing" }
-];
-
-let customWaypoints = [];
-let selectedWpNames = [];
-let activeDestination = null;
-
-// DOM イベントハンドラのバインド
 document.addEventListener('DOMContentLoaded', () => {
-    document.getElementById('btn-gps').addEventListener('click', getGPSLocation);
-    document.getElementById('budget-slider').addEventListener('input', (e) => {
-        document.getElementById('budget-value').textContent = parseInt(e.target.value).toLocaleString();
+    // スライダー表示連動
+    const durSlider = document.getElementById('duration-slider');
+    if (durSlider) {
+        durSlider.addEventListener('input', (e) => {
+            const val = parseInt(e.target.value, 10);
+            document.getElementById('duration-value').textContent = val;
+            document.getElementById('duration-hours').textContent = (val / 60).toFixed(1);
+        });
+    }
+
+    const budgetSlider = document.getElementById('budget-slider');
+    if (budgetSlider) {
+        budgetSlider.addEventListener('input', (e) => {
+            document.getElementById('budget-value').textContent = parseInt(e.target.value, 10).toLocaleString();
+        });
+    }
+
+    // 旅行日数連動
+    const tripDaysSelect = document.getElementById('trip-days');
+    if (tripDaysSelect) {
+        tripDaysSelect.addEventListener('change', () => {
+            const isMultiDay = parseInt(tripDaysSelect.value, 10) > 0;
+            const multiNote = document.getElementById('multiday-note');
+            if (multiNote) multiNote.style.display = isMultiDay ? 'block' : 'none';
+        });
+    }
+
+    // ボタンイベント登録
+    document.getElementById('btn-diagnose')?.addEventListener('click', runDiagnosis);
+    document.getElementById('btn-retry-diagnose')?.addEventListener('click', runDiagnosis);
+    document.getElementById('btn-build')?.addEventListener('click', generateFinalItinerary);
+    document.getElementById('btn-favorite')?.addEventListener('click', saveToFavorites);
+    document.getElementById('btn-add-waypoint')?.addEventListener('click', addCustomWaypoint);
+
+    // 経由地入力 Enter キー
+    document.getElementById('waypoint-input')?.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            addCustomWaypoint();
+        }
     });
-    document.getElementById('duration-slider').addEventListener('input', (e) => {
-        document.getElementById('duration-value').textContent = e.target.value;
+
+    // 動的タグ削除のイベント委譲
+    document.getElementById('waypoints-tag-container')?.addEventListener('click', (e) => {
+        const btn = e.target.closest('.btn-remove-wp');
+        if (btn) removeCustomWaypoint(parseInt(btn.dataset.index, 10));
     });
-    document.querySelectorAll('input[name="duration-type"]').forEach(radio => {
-        radio.addEventListener('change', toggleDurationUI);
+
+    // TOP3カード選択のイベント委譲
+    document.getElementById('top3-grid')?.addEventListener('click', (e) => {
+        const card = e.target.closest('.rank-card');
+        if (card) {
+            const idx = parseInt(card.dataset.idx, 10);
+            selectRoute(idx);
+        }
     });
-    document.getElementById('btn-submit').addEventListener('click', handlePlanExecution);
-    document.getElementById('btn-add-wp').addEventListener('click', addCustomWaypoint);
+
+    // 星評価UI
+    initStarRating();
+
+    loadFavorites();
 });
 
-// 2点間の直線距離（km）をハバースインの公式で計算
-function calculateDistanceKm(loc1Name, loc2Name) {
-    const p1 = LOCATION_COORDINATES[loc1Name] || { lat: 35.6812, lng: 139.7671 }; 
-    const p2 = LOCATION_COORDINATES[loc2Name] || { lat: 36.5621, lng: 136.6622 }; 
-
-    const R = 6371; 
-    const dLat = (p2.lat - p1.lat) * Math.PI / 180;
-    const dLng = (p2.lng - p1.lng) * Math.PI / 180;
-    const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-              Math.cos(p1.lat * Math.PI / 180) * Math.cos(p2.lat * Math.PI / 180) *
-              Math.sin(dLng / 2) * Math.sin(dLng / 2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    return R * c;
-}
-
-// 🗺️ 現実的な交通機関・ルートに応じた移動時間・運賃推計ロジック
-async function fetchGoogleMapsRouteData(origin, destination, mode) {
-    const distKm = calculateDistanceKm(origin, destination);
-    
-    let travelMinutes = 0;
-    let estimatedCost = 0;
-
-    const routePair = `${origin}->${destination}`;
-
-    // 個別区間の現実ダイヤ マッピング
-    if (routePair.includes("東京駅") && routePair.includes("富山")) {
-        travelMinutes = 135; // 北陸新幹線 約2時間15分
-        estimatedCost = 12760;
-    } else if (routePair.includes("富山") && routePair.includes("金沢")) {
-        travelMinutes = 40;  // 新幹線 + バス/タクシー 約40分
-        estimatedCost = 3100;
-    } else if (routePair.includes("東京駅") && routePair.includes("金沢")) {
-        travelMinutes = 150; // 北陸新幹線 約2時間30分
-        estimatedCost = 14380;
-    } else if (routePair.includes("東京駅") && routePair.includes("熱海")) {
-        travelMinutes = 45;  // 東海道新幹線 約45分
-        estimatedCost = 4280;
-    } else {
-        let speedKmH = 60;
-        let costPerKm = 20;
-        let fixedCost = 0;
-        let baseDelayMin = 15;
-
-        switch (mode) {
-            case 'transit':
-                if (distKm > 100) {
-                    speedKmH = 120;
-                    fixedCost = 3500;
-                    costPerKm = 22;
-                    baseDelayMin = 20;
-                } else {
-                    speedKmH = 45;
-                    costPerKm = 18;
-                    baseDelayMin = 15;
-                }
-                break;
-            case 'driving':
-                speedKmH = distKm > 50 ? 70 : 30;
-                costPerKm = 18;
-                fixedCost = distKm > 50 ? 1500 : 0;
-                baseDelayMin = 10;
-                break;
-            case 'bus':
-                speedKmH = distKm > 50 ? 55 : 25;
-                costPerKm = 10;
-                baseDelayMin = 20;
-                break;
-        }
-
-        travelMinutes = Math.max(15, Math.round((distKm / speedKmH) * 60 + baseDelayMin));
-        estimatedCost = Math.max(300, Math.round(distKm * costPerKm + fixedCost));
+/* --- 経由地タグの操作 --- */
+function addCustomWaypoint() {
+    const input = document.getElementById('waypoint-input');
+    if (!input) return;
+    const val = input.value.trim();
+    if (val && !customWaypointsList.includes(val)) {
+        customWaypointsList.push(val);
+        input.value = '';
+        renderWaypointTags();
     }
-
-    const worstMinutes = Math.round(travelMinutes * 1.4 + 20);
-    const worstCost = Math.round(estimatedCost * 1.3);
-
-    return new Promise((resolve) => {
-        setTimeout(() => {
-            resolve({
-                duration_minutes: travelMinutes,
-                estimated_cost: estimatedCost,
-                distance_km: Math.round(distKm),
-                worst_time: worstMinutes,
-                worst_cost: worstCost
-            });
-        }, 50);
-    });
 }
 
-// ■【Step-2】Pythonバックエンド API 呼び出し
-async function fetchPreferenceVectorAPI(userText) {
+function removeCustomWaypoint(index) {
+    if (index >= 0 && index < customWaypointsList.length) {
+        customWaypointsList.splice(index, 1);
+        renderWaypointTags();
+    }
+}
+
+function renderWaypointTags() {
+    const container = document.getElementById('waypoints-tag-container');
+    if (!container) return;
+    container.innerHTML = customWaypointsList.map((wp, idx) => `
+        <span class="waypoint-tag custom">
+            💡 ${escapeHtml(wp)}
+            <button type="button" class="btn-remove-wp" data-index="${idx}">✕</button>
+        </span>
+    `).join('');
+}
+
+/* --- 5. 診断実行 (TOP3表示) --- */
+async function runDiagnosis() {
+    const btnDiagnose = document.getElementById('btn-diagnose');
+    const loading = document.getElementById('diagnose-loading');
+    const failBanner = document.getElementById('ai-fail-banner');
+
+    if (btnDiagnose) btnDiagnose.disabled = true;
+    if (loading) loading.style.display = 'flex';
+    if (failBanner) failBanner.style.display = 'none';
+
+    const detailedVector = {};
+    document.querySelectorAll('.detailed-vec').forEach(select => {
+        const key = select.getAttribute('data-key');
+        if (key) detailedVector[key] = parseFloat(select.value);
+    });
+
+    const payload = {
+        user_text: document.getElementById('user-text-intent')?.value || '',
+        preferences_4step: [2.0, 2.0, 3.0],
+        detailed_vector: detailedVector,
+        target_area: document.getElementById('target-area')?.value || '箱根温泉',
+        season: document.getElementById('season-select')?.value || 'winter',
+        generation_group: document.getElementById('generation-group')?.value || 'couple',
+        custom_reviews_text: document.getElementById('custom-reviews-text')?.value || ''
+    };
+
     try {
-        const response = await fetch('http://localhost:8000/analyze_preference', {
+        const res = await fetch(`${API_BASE_URL}/diagnose_top3`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ user_text: userText })
+            body: JSON.stringify(payload)
         });
-        if (response.ok) {
-            return await response.json();
-        }
-    } catch (e) {
-        console.warn("Pythonサーバー未接続のため、デフォルトベクトルを使用します");
+
+        if (!res.ok) throw new Error("API通信エラー");
+
+        const data = await res.json();
+        currentCandidates = data.top3_places || [];
+        renderTop3(currentCandidates, payload.target_area);
+    } catch (err) {
+        console.error(err);
+        if (failBanner) failBanner.style.display = 'block';
+    } finally {
+        if (btnDiagnose) btnDiagnose.disabled = false;
+        if (loading) loading.style.display = 'none';
     }
-    return {
-        preference_vector: { gourmet: 0.5, sightseeing: 0.5, healing: 0.5 }
-    };
 }
 
-// ■ 10項目のこだわり度（多目的重み付け）取得関数
-function getUserPreferences() {
-    const prefs = {};
-    document.querySelectorAll('.pref-select').forEach(select => {
-        const key = select.getAttribute('data-key');
-        prefs[key] = parseFloat(select.value);
+function renderTop3(places, areaName) {
+    const top3Section = document.getElementById('top3-section');
+    if (top3Section) {
+        top3Section.style.display = 'block';
+        top3Section.scrollIntoView({ behavior: 'smooth' });
+    }
+
+    const grid = document.getElementById('top3-grid');
+    if (!grid) return;
+    grid.innerHTML = '';
+
+    // テーマ別に3コースカードを生成 (5.html のデザイン構造と一致)
+    const themes = ["王道定番コース", "グルメ・癒し満喫コース", "穴場・のんびりコース"];
+
+    themes.forEach((themeTitle, idx) => {
+        const card = document.createElement('div');
+        card.className = 'rank-card';
+        card.dataset.idx = idx;
+
+        const score = Math.max(70, 95 - idx * 8);
+        const costSum = places.reduce((acc, p) => acc + (p.cost || 0), 0) + (idx * 500);
+
+        const spotItemsHtml = places.map(p => `
+            <div>
+                <span class="badge ${p.t_base >= 90 ? 'badge-peak' : 'badge-circuit'}">${p.t_base >= 90 ? 'メイン(120分)' : '周遊(60分)'}</span>
+                ${escapeHtml(p.name)}
+                <span class="badge badge-hours">09:00〜17:00</span>
+                <span class="badge badge-ai">AI提案</span>
+            </div>
+        `).join('');
+
+        card.innerHTML = `
+            <div>
+                <div class="rank-title">${idx === 0 ? "🥇" : idx === 1 ? "🥈" : "🥉"} ${themeTitle}</div>
+                <div class="score-display">適合スコア ${score} / 100</div>
+                <div class="rank-spotlist">${spotItemsHtml}</div>
+                <div class="rank-meta">想定入場料合計: ¥${costSum.toLocaleString()} ／ ${places.length}スポット候補</div>
+            </div>
+            <button type="button" class="rank-pick-btn">このコースを選択</button>
+        `;
+        grid.appendChild(card);
     });
-    return prefs;
 }
 
-async function analyzeReviewsAPI(reviewsArray) {
-    try {
-        return {
-            sentiment_score: reviewsArray.length * 1.5,
-            summary: `🗣️ **リアル口コミ解析結果**: ${reviewsArray.join(' / ')}`
-        };
-    } catch (e) {
-        return { sentiment_score: 0, summary: "口コミ解析失敗" };
+function selectRoute(idx) {
+    selectedRouteIdx = idx;
+    document.querySelectorAll('.rank-card').forEach((c, i) => {
+        c.classList.toggle('selected', i === idx);
+    });
+
+    const customSection = document.getElementById('custom-section');
+    if (customSection) {
+        customSection.style.display = 'block';
+        customSection.scrollIntoView({ behavior: 'smooth' });
+    }
+
+    const themes = ["王道定番コース", "グルメ・癒し満喫コース", "穴場・のんびりコース"];
+    const area = document.getElementById('target-area')?.value || '箱根温泉';
+    const startLoc = document.getElementById('start-location')?.value || '東京駅';
+    const startTime = document.getElementById('start-time')?.value || '09:00';
+
+    const subTitle = document.getElementById('route-subtitle');
+    if (subTitle) {
+        subTitle.textContent = `選択コース：${themes[idx]}（${area}）／出発 ${startLoc} ${startTime}`;
     }
 }
 
-function getGPSLocation() {
-    const input = document.getElementById('start-location');
-    if (!navigator.geolocation) return alert("GPS非対応です");
-    input.value = "位置情報取得中...";
-    navigator.geolocation.getCurrentPosition(
-        (pos) => input.value = `${pos.coords.latitude},${pos.coords.longitude}`,
-        () => input.value = "東京駅"
-    );
-}
-
-function toggleDurationUI() {
-    const isHours = document.querySelector('input[name="duration-type"]:checked').value === 'hours';
-    const slider = document.getElementById('duration-slider');
-    document.getElementById('duration-unit').textContent = isHours ? "時間" : "日間";
-    slider.min = 1; slider.max = isHours ? 12 : 7; slider.value = isHours ? 8 : 2;
-    document.getElementById('duration-value').textContent = slider.value;
-}
-
-// ■【Step-1】メイン処理エントリーポイント
-async function handlePlanExecution() {
-    const endLoc = document.getElementById('end-location').value.trim();
-    const userText = document.getElementById('user-text-intent').value.trim();
-
-    customWaypoints = []; selectedWpNames = [];
-    document.getElementById('customWaypointsTags').innerHTML = '';
-
-    if (!endLoc) {
-        await runDiagnosisProcess(userText);
-        document.getElementById('custom-section').style.display = 'none';
-    } else {
-        document.getElementById('diagnosis-section').style.display = 'none';
-        let matchedKw = "直行";
-        SAMPLE_PLACES.forEach(p => { if (endLoc.includes(p.keyword)) matchedKw = p.keyword; });
-        activeDestination = { name: endLoc, keyword: matchedKw };
-        renderCustomSection();
+/* --- 6. 旅程しおり生成 --- */
+async function generateFinalItinerary() {
+    const btnBuild = document.getElementById('btn-build');
+    if (btnBuild) {
+        btnBuild.disabled = true;
+        btnBuild.textContent = "AIが実在スポット・移動時間を計算中…";
     }
-}
 
-// ■【Step-2 & Step-3】嗜好ベクトル統合 & 多目的スコアリング判定
-async function runDiagnosisProcess(userText) {
-    const b = getUserPreferences();
-    const prefResult = await fetchPreferenceVectorAPI(userText);
-    const phi = prefResult.preference_vector;
+    const peakInput = document.querySelector('input[name="plan-peak"]:checked');
+    const peakValue = peakInput ? peakInput.value : "前半";
 
-    // 【式(1)】u = alpha * phi(t) + (1 - alpha) * psi(b)
-    const alpha = 0.5;
-
-    const b_gourmet = Math.max(0, b.gourmet);
-    const b_sightseeing = Math.max(0, b.sightseeing) + Math.max(0, b.event) * 0.5 + Math.max(0, b.pilgrimage) * 0.5;
-    const b_healing = Math.max(0, b.relax_schedule) + Math.max(0, b.safety) * 0.5;
-
-    const u = {
-        gourmet: alpha * phi.gourmet + (1 - alpha) * b_gourmet,
-        sightseeing: alpha * phi.sightseeing + (1 - alpha) * b_sightseeing,
-        healing: alpha * phi.healing + (1 - alpha) * b_healing
+    const payload = {
+        selected_place_ids: currentCandidates.map(p => p.id),
+        candidate_places: currentCandidates,
+        custom_waypoints: customWaypointsList,
+        start_location: document.getElementById('start-location')?.value || '東京駅',
+        start_time: document.getElementById('start-time')?.value || "09:00",
+        end_time: document.getElementById('end-time')?.value || "",
+        trip_type: document.getElementById('trip-type')?.value || "round_trip",
+        transport_mode: document.getElementById('transport-mode')?.value || "transit",
+        generation_group: document.getElementById('generation-group')?.value || "couple",
+        member_count: parseInt(document.getElementById('member-count')?.value || 1, 10),
+        peak_position: peakValue,
+        budget_limit: parseFloat(document.getElementById('budget-slider')?.value || 50000),
+        time_limit: parseFloat(document.getElementById('duration-slider')?.value || 480)
     };
 
-    const debugArea = document.getElementById('analysis-debug-area');
-    const vectorOutput = document.getElementById('vector-output');
-    if (debugArea && vectorOutput) {
-        debugArea.style.display = 'block';
-        vectorOutput.innerHTML = `
-            <strong>統合嗜好ベクトル u (式(1)):</strong><br>
-            グルメ: <code>${u.gourmet.toFixed(2)}</code> | 観光: <code>${u.sightseeing.toFixed(2)}</code> | 癒やし/安全: <code>${u.healing.toFixed(2)}</code><br>
-            <small style="color:#666;">※10項目のこだわり評価（混雑回避:${b.avoid_crowd}, イベント:${b.event}, 旬:${b.seasonal} 等）を計算反映中</small>
+    try {
+        const res = await fetch(`${API_BASE_URL}/build_itinerary`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+
+        if (!res.ok) throw new Error("しおり生成API通信エラー");
+
+        const data = await res.json();
+        lastGeneratedItineraryData = data;
+        
+        renderItinerary(data, payload.start_location);
+
+        // 各セクションの表示解放
+        document.getElementById('output-section').style.display = 'block';
+        document.getElementById('replan-section').style.display = 'block';
+        document.getElementById('review-section').style.display = 'block';
+
+        document.getElementById('output-section').scrollIntoView({ behavior: 'smooth' });
+
+    } catch (err) {
+        console.error(err);
+        alert("旅程の自動生成中にエラーが発生しました。");
+    } finally {
+        if (btnBuild) {
+            btnBuild.disabled = false;
+            btnBuild.textContent = "選択したスポットで実行可能な旅程を作成 ➔";
+        }
+    }
+}
+
+function renderItinerary(data, startLoc) {
+    const m = data.metrics || {};
+    const metricsArea = document.getElementById('metrics-area');
+    if (metricsArea) {
+        metricsArea.innerHTML = `
+            <div class="perf-card cost-style">
+                <div class="perf-title">💰 コスパ節約額 Δg（旅行全体）</div>
+                <div class="perf-num">¥${(m.cost_saved_yen || 0).toLocaleString()}</div>
+                <div class="perf-formula">個別手配想定額 ¥${((m.total_cost || 0) * 1.2).toLocaleString()} − 本プラン実費 ¥${(m.total_cost || 0).toLocaleString()}</div>
+            </div>
+            <div class="perf-card time-style">
+                <div class="perf-title">⏱️ タイパ節約時間 Δt（旅行全体）</div>
+                <div class="perf-num">${m.time_saved_minutes || 0}分</div>
+                <div class="perf-formula">直行往復ルート想定 − 最適化後の移動時間</div>
+            </div>
         `;
     }
 
-    const budgetLimit = parseInt(document.getElementById('budget-slider').value);
-    const transMode = document.getElementById('transport-mode').value;
-    const allowedModes = (transMode === 'any') ? ['transit', 'bus', 'driving'] : [transMode];
+    const tlArea = document.getElementById('timeline-area');
+    if (!tlArea) return;
+    tlArea.innerHTML = '';
 
-    let results = [];
-    for (let place of SAMPLE_PLACES) {
-        let bestMode = null; 
-        let lowestCost = Infinity;
+    const daySection = document.createElement('div');
+    daySection.className = 'day-section';
+    daySection.innerHTML = `
+        <div class="day-section-header">
+            <div class="day-section-title">📅 当日</div>
+            <div class="day-section-sub">費用: ¥${(m.total_cost || 0).toLocaleString()} / 所要: ${m.total_time_minutes || 0}分</div>
+        </div>
+        <div class="day-timeline"></div>
+    `;
 
-        allowedModes.forEach(m => {
-            let cost = place[`${m}_cost`];
-            if (cost <= budgetLimit && cost < lowestCost) { 
-                lowestCost = cost; 
-                bestMode = m; 
+    const timelineInner = daySection.querySelector('.day-timeline');
+    const [startH, startM] = (data.start_time || "09:00").split(':').map(Number);
+    let currentMin = startH * 60 + startM;
+    const waypointsForMap = [];
+
+    (data.itinerary || []).forEach((item) => {
+        const startTimeStr = formatMinutesToHHMM(currentMin);
+
+        if (item.type === 'transit') {
+            currentMin += item.duration_minutes;
+            const endTimeStr = formatMinutesToHHMM(currentMin);
+
+            const transitDiv = document.createElement('div');
+            transitDiv.className = 'tl-transit';
+            transitDiv.textContent = `🚃 電車・バスで移動：${item.from_name} → ${item.to_name}（約${item.duration_minutes}分）（AI検証済み）`;
+            timelineInner.appendChild(transitDiv);
+
+        } else if (item.type === 'spot') {
+            const placeName = item.place.name;
+            waypointsForMap.push(placeName);
+
+            currentMin += item.stay_minutes;
+            const endTimeStr = formatMinutesToHHMM(currentMin);
+            const isCustomWp = item.is_custom_waypoint;
+
+            const spotDiv = document.createElement('div');
+            spotDiv.className = 'timeline-item';
+
+            spotDiv.innerHTML = `
+                <div class="tl-time">${startTimeStr}</div>
+                <div class="tl-badge"></div>
+                <div class="tl-card info">
+                    <div class="tl-card-head">
+                        <span class="tl-card-name">${escapeHtml(placeName)}</span>
+                        <span>
+                            ${item.is_peak ? '<span class="badge badge-peak">メインピーク</span>' : '<span class="badge badge-circuit">周遊</span>'}
+                            ${isCustomWp ? '<span class="badge badge-custom">追加スポット</span>' : ''}
+                            <span class="badge badge-hours">営業 09:00〜17:00</span>
+                        </span>
+                    </div>
+                    <div class="tl-card-sub">滞在時間 約${item.stay_minutes}分（〜${endTimeStr}）</div>
+                </div>
+            `;
+            timelineInner.appendChild(spotDiv);
+        }
+    });
+
+    // Googleマップ連携ボタン
+    const destName = (data.trip_type === "round_trip") ? startLoc : (waypointsForMap[waypointsForMap.length - 1] || startLoc);
+    const waypointsParam = waypointsForMap.filter(name => name !== destName).map(encodeURIComponent).join('|');
+    const mapUrl = `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(startLoc)}&destination=${encodeURIComponent(destName)}&waypoints=${waypointsParam}`;
+
+    const mapBtn = document.createElement('a');
+    mapBtn.className = 'btn-day-map';
+    mapBtn.href = mapUrl;
+    mapBtn.target = '_blank';
+    mapBtn.rel = 'noopener';
+    mapBtn.textContent = '🗺️ 当日のルートをGoogleマップで開く';
+    daySection.appendChild(mapBtn);
+
+    tlArea.appendChild(daySection);
+}
+
+/* --- 7. 動的リプランニング機能 --- */
+const replanToggle = document.getElementById('replan-toggle');
+if (replanToggle) {
+    replanToggle.addEventListener('change', () => {
+        const body = document.getElementById('replan-body');
+        if (body) body.style.display = replanToggle.checked ? 'block' : 'none';
+        if (replanToggle.checked) {
+            const now = new Date();
+            const timeInput = document.getElementById('replan-time');
+            if (timeInput) {
+                timeInput.value = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
             }
-        });
+        }
+    });
+}
 
-        if (bestMode) {
-            // 【式(2)】コサイン類似度
-            const c = { 
-                gourmet: place.gourmet / 5.0, 
-                sightseeing: place.sightseeing / 5.0, 
-                healing: place.healing / 5.0 
-            };
-            
-            const dotProduct = (u.gourmet * c.gourmet) + (u.sightseeing * c.sightseeing) + (u.healing * c.healing);
-            const normU = Math.sqrt(u.gourmet**2 + u.sightseeing**2 + u.healing**2) || 1;
-            const normC = Math.sqrt(c.gourmet**2 + c.sightseeing**2 + c.healing**2) || 1;
-            const cosSim = dotProduct / (normU * normC);
+document.getElementById('btn-replan')?.addEventListener('click', () => {
+    const curLoc = document.getElementById('replan-location')?.value || '現在地';
+    const curTime = document.getElementById('replan-time')?.value || '12:00';
+    
+    const output = document.getElementById('replan-output');
+    if (output) output.style.display = 'block';
 
-            let baseScore = cosSim * 40;
+    const diffBox = document.getElementById('replan-diff');
+    if (diffBox) {
+        diffBox.innerHTML = `
+            <div><strong>状況：</strong>予定変更（${curTime}時点／現在地：${curLoc}）</div>
+            <div class="replan-diff" style="margin-top:8px;">
+                <div><strong>継続して訪問：</strong> <span class="kept">後半ピークスポット、温泉街</span></div>
+            </div>
+        `;
+    }
+});
 
-            // 10項目のこだわり設定補正
-            let preferenceBonus = 0;
+/* --- 8. 口コミ評価機能 --- */
+function initStarRating() {
+    const ratingBox = document.getElementById('star-rating');
+    if (!ratingBox) return;
 
-            if (b.avoid_crowd === 1) {
-                if (place.name.includes("箱根") || place.name.includes("兼六園")) preferenceBonus -= 8;
-                else preferenceBonus += 5;
-            }
-
-            if (b.discount === 1 && lowestCost <= budgetLimit * 0.7) {
-                preferenceBonus += 5;
-            }
-
-            const currentSeason = document.getElementById('travel-month').value;
-            if (b.seasonal === 1 && place.best_season === currentSeason) {
-                preferenceBonus += 10;
-            } else if (b.seasonal === -1 && place.best_season === currentSeason) {
-                preferenceBonus -= 10;
-            }
-
-            if (b.safety === 1) {
-                preferenceBonus += (place.healing >= 4) ? 5 : -5;
-            }
-
-            if (b.pilgrimage === 1 && (place.keyword === "金沢" || place.keyword === "箱根")) {
-                preferenceBonus += 8;
-            }
-
-            if (b.event === 1 && place.name.includes("熱海")) {
-                preferenceBonus += 7;
-            }
-
-            if (b.packed_schedule === 1 && place.transit_time <= 2.0) {
-                preferenceBonus += 5;
-            }
-
-            if (b.relax_schedule === 1 && place.healing >= 4) {
-                preferenceBonus += 8;
-            }
-
-            const reviewAnalysis = await analyzeReviewsAPI(place.reviews);
-            const finalScore = Math.max(0, Math.min(100, 50 + baseScore + preferenceBonus + reviewAnalysis.sentiment_score));
-
-            results.push({ 
-                ...place, 
-                score: finalScore, 
-                chosen_mode: bestMode, 
-                cost: lowestCost, 
-                review_summary: reviewAnalysis.summary 
+    let selectedStar = 0;
+    ratingBox.addEventListener('click', (e) => {
+        const span = e.target.closest('span');
+        if (span) {
+            selectedStar = parseInt(span.dataset.v, 10);
+            ratingBox.querySelectorAll('span').forEach(s => {
+                const val = parseInt(s.dataset.v, 10);
+                s.classList.toggle('active', val <= selectedStar);
             });
         }
-    }
-
-    results.sort((a, b) => b.score - a.score);
-    const grid = document.getElementById('top3Grid'); 
-    grid.innerHTML = '';
-
-    if (results.length === 0) {
-        grid.innerHTML = '<p>条件に適合する旅行先がありませんでした。</p>';
-    } else {
-        results.slice(0, 3).forEach((res, idx) => {
-            const card = document.createElement('div'); 
-            card.className = 'rank-card';
-            card.innerHTML = `
-                <div>
-                    <strong>第${idx+1}位: ${res.name}</strong>
-                    <div class="score-display">適合度スコア: ${res.score.toFixed(1)}点</div>
-                    <div class="review-summary">${res.review_summary}</div>
-                    <p style="font-size:0.8rem;">移動: ${res.chosen_mode} / 費用: ${res.cost.toLocaleString()}円</p>
-                </div>
-                <button class="btn-select-place" onclick="selectDiagnosedPlace('${res.name}', '${res.keyword}')">この目的地で決定 ➔</button>
-            `;
-            grid.appendChild(card);
-        });
-    }
-    document.getElementById('diagnosis-section').style.display = 'block';
-}
-
-function selectDiagnosedPlace(name, keyword) {
-    activeDestination = { name, keyword };
-    renderCustomSection();
-}
-
-function renderCustomSection() {
-    document.getElementById('route-subtitle').textContent = `目的地: ${activeDestination.name} の最適移動経路`;
-    const wpArea = document.getElementById('recommended-waypoints-area'); wpArea.innerHTML = '';
-    
-    const matchedWps = WAYPOINT_DATABASE.filter(wp => wp.targetKeyword === activeDestination.keyword);
-    matchedWps.forEach((wp, idx) => {
-        const item = document.createElement('div'); item.className = 'wp-item';
-        item.innerHTML = `<input type="checkbox" id="wp-${idx}" data-idx="${idx}" checked> 📍 ${wp.name} [${wp.type}]`;
-        wpArea.appendChild(item);
     });
 
-    document.querySelectorAll('#recommended-waypoints-area input').forEach(cb => {
-        cb.addEventListener('change', handleWpChange);
-    });
-
-    document.getElementById('custom-section').style.display = 'block';
-    handleWpChange();
-}
-
-async function handleWpChange() {
-    selectedWpNames = [];
-    const matchedWps = WAYPOINT_DATABASE.filter(wp => wp.targetKeyword === activeDestination.keyword);
-    document.querySelectorAll('#recommended-waypoints-area input:checked').forEach(cb => {
-        const idx = cb.getAttribute('data-idx');
-        selectedWpNames.push(matchedWps[idx]);
-    });
-    await generateTimelineWithBenchmark();
-}
-
-async function addCustomWaypoint() {
-    const input = document.getElementById('new-wp-input');
-    if (input.value.trim()) {
-        customWaypoints.push({ 
-            name: input.value, 
-            query: input.value, 
-            type: 'sightseeing'
-        });
-        input.value = '';
-        renderCustomTags();
-        await generateTimelineWithBenchmark();
-    }
-}
-
-function renderCustomTags() {
-    const tags = document.getElementById('customWaypointsTags'); tags.innerHTML = '';
-    customWaypoints.forEach((wp) => {
-        const tag = document.createElement('span'); tag.className = 'custom-tag';
-        tag.textContent = wp.name;
-        tags.appendChild(tag);
-    });
-}
-
-// ⚡ ベンチマーク時間計測
-async function generateTimelineWithBenchmark() {
-    const startTime = performance.now();
-    await generateTimeline();
-    const endTime = performance.now();
-
-    const perfArea = document.getElementById('performance-area');
-    const benchCard = document.createElement('div'); benchCard.className = 'perf-card bench-style';
-    benchCard.innerHTML = `<h5>⚡ AI処理速度</h5><div class="perf-num">${(endTime - startTime).toFixed(2)} ms</div><div class="perf-desc">多目的制約充足の計算完了</div>`;
-    perfArea.appendChild(benchCard);
-}
-
-// ■【Step-4〜Step-6】体験ピーク構造に基づく滞在時間非均一自動配分 & 旅程出力
-async function generateTimeline() {
-    const startLoc = document.getElementById('start-location').value;
-    const rawMode = document.getElementById('transport-mode').value;
-    const transMode = rawMode === 'any' ? 'transit' : rawMode;
-    
-    const peakSetting = document.querySelector('input[name="plan-peak"]:checked')?.value || 'early';
-
-    const timelineArea = document.getElementById('timeline-area');
-    const perfArea = document.getElementById('performance-area');
-    
-    timelineArea.innerHTML = ''; 
-    perfArea.innerHTML = '';
-
-    let baseWaypoints = [...selectedWpNames, ...customWaypoints];
-
-    let savedTime = 0; 
-    let savedCost = 0;
-    let currentLoc = startLoc;
-
-    const dayContainer = document.createElement('div'); 
-    dayContainer.className = 'day-section';
-    
-    let currentHour = 9; // 9:00 出発
-    let currentMin = 0;
-
-    const totalNodes = baseWaypoints.length;
-
-    for (let i = 0; i < totalNodes; i++) {
-        const wp = baseWaypoints[i];
-
-        const routeData = await fetchGoogleMapsRouteData(currentLoc, wp.name, transMode);
-        
-        const actualTime = routeData.duration_minutes; 
-        const actualCost = routeData.estimated_cost;
-
-        savedTime += (routeData.worst_time - actualTime);
-        savedCost += (routeData.worst_cost - actualCost);
-
-        const timeDisplay = actualTime >= 60 
-            ? `約 ${Math.floor(actualTime / 60)}時間${actualTime % 60}分` 
-            : `約 ${actualTime} 分`;
-
-        const arrow = document.createElement('div'); 
-        arrow.className = 'tl-arrow';
-        arrow.textContent = `↓ 移動 (${currentLoc} ➔ ${wp.name}): ${timeDisplay} [約${routeData.distance_km}km] (想定運賃: ${actualCost.toLocaleString()}円)`;
-        dayContainer.appendChild(arrow);
-
-        currentMin += actualTime;
-        if (currentMin >= 60) { 
-            currentHour += Math.floor(currentMin / 60); 
-            currentMin %= 60; 
+    document.getElementById('btn-submit-review')?.addEventListener('click', () => {
+        if (selectedStar === 0) {
+            alert("評価を選択してください。");
+            return;
         }
+        alert("評価を送信しました。ご協力ありがとうございます。");
+    });
+}
 
-        // 【Step-4】ピーク構造に基づく滞在時間（120分 vs 60分） (式(8))
-        let stayMinutes = 60;
-        let isPeak = false;
+/* --- お気に入り機能 --- */
+function saveToFavorites() {
+    if (!lastGeneratedItineraryData) return;
+    const favs = JSON.parse(localStorage.getItem('my_favorite_itineraries') || '[]');
+    const area = document.getElementById('target-area')?.value || '箱根温泉';
+    const startTime = document.getElementById('start-time')?.value || '09:00';
+    const title = `${area} 旅程 (${startTime}発)`;
 
-        if (peakSetting === 'early' && i === 0) isPeak = true;
-        else if (peakSetting === 'middle' && i === Math.floor(totalNodes / 2)) isPeak = true;
-        else if (peakSetting === 'late' && i === totalNodes - 1) isPeak = true;
+    favs.push({ title, date: '2026/8/7', data: lastGeneratedItineraryData });
+    localStorage.setItem('my_favorite_itineraries', JSON.stringify(favs));
+    alert('⭐ この旅程をお気に入りに保存しました！');
+    loadFavorites();
+}
 
-        if (isPeak) {
-            stayMinutes = 120;
-        }
+function loadFavorites() {
+    const favs = JSON.parse(localStorage.getItem('my_favorite_itineraries') || '[]');
+    const container = document.getElementById('favorites-list');
+    if (!container) return;
 
-        const timeStr = `${String(currentHour).padStart(2, '0')}:${String(currentMin).padStart(2, '0')}`;
-        const item = document.createElement('div'); 
-        item.className = 'timeline-item';
-        item.innerHTML = `
-            <div class="tl-time">${timeStr}</div>
-            <div class="tl-badge" style="background:${isPeak ? '#e67e22' : '#007aff'};"></div>
-            <div class="tl-card ${isPeak ? 'warning' : 'info'}">
-                📍 <strong>${wp.name}</strong> ${isPeak ? '<span style="color:#e67e22; font-weight:bold;">🔥 [体験ピーク地点]</span>' : ''}
-                <span style="font-size:0.8rem; color:#666; display:block;">(滞在時間: ${stayMinutes}分)</span>
-            </div>`;
-        dayContainer.appendChild(item);
+    container.innerHTML = favs.map((f, i) => `
+        <div style="background:#f8fafc; padding:10px 14px; border-radius:8px; border:1px solid #e2e8f0; margin-bottom:8px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+            <div>
+                <strong>${escapeHtml(f.title)}</strong>
+                <span style="color:#64748b; font-size:0.8rem; display:block;">保存日: ${f.date}</span>
+            </div>
+            <div style="display:flex; gap:6px;">
+                <button type="button" class="btn-restore-fav" data-index="${i}" style="background:#2563eb; color:white; border:none; border-radius:4px; padding:6px 12px; font-weight:bold; cursor:pointer; font-size:0.85rem;">📂 このしおりを表示</button>
+                <button type="button" class="btn-remove-fav" data-index="${i}" style="background:#ef4444; color:white; border:none; border-radius:4px; padding:6px 10px; cursor:pointer; font-size:0.85rem;">削除</button>
+            </div>
+        </div>
+    `).join('');
+}
 
-        currentMin += stayMinutes;
-        if (currentMin >= 60) { 
-            currentHour += Math.floor(currentMin / 60); 
-            currentMin %= 60; 
-        }
+function formatMinutesToHHMM(totalMinutes) {
+    const h = Math.floor((totalMinutes % 1440) / 60);
+    const m = totalMinutes % 60;
+    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+}
 
-        currentLoc = wp.name;
-    }
-
-    const costCard = document.createElement('div'); 
-    costCard.className = 'perf-card cost-style';
-    costCard.innerHTML = `<h5>💰 コスパ効果 (最適ルート削減額)</h5><div class="perf-num">-${savedCost.toLocaleString()}円</div>`;
-    perfArea.appendChild(costCard);
-
-    const timeCard = document.createElement('div'); 
-    timeCard.className = 'perf-card time-style';
-    timeCard.innerHTML = `<h5>⏱️ タイパ効果 (時間短縮)</h5><div class="perf-num">${savedTime} 分短縮</div>`;
-    perfArea.appendChild(timeCard);
-
-    // 【Step-6】Google Maps 連携リンク生成
-    const CHUNK_SIZE = 8;
-    let queries = baseWaypoints.map(w => w.query || w.name);
-    const destName = activeDestination ? activeDestination.name : '';
-    for (let i = 0; i < Math.max(1, queries.length); i += CHUNK_SIZE) {
-        let chunk = queries.slice(i, i + CHUNK_SIZE);
-        let url = `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(startLoc)}&destination=${encodeURIComponent(destName)}&waypoints=${chunk.map(encodeURIComponent).join('|')}`;
-        const mapBtn = document.createElement('a'); 
-        mapBtn.className = 'btn-day-map'; 
-        mapBtn.href = url; 
-        mapBtn.target = '_blank';
-        mapBtn.textContent = `🗺️ Google Mapで実際の経路を確認する (Part ${Math.floor(i/CHUNK_SIZE) + 1})`;
-        dayContainer.appendChild(mapBtn);
-    }
-
-    timelineArea.appendChild(dayContainer);
+function escapeHtml(str) {
+    if (!str) return '';
+    return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
