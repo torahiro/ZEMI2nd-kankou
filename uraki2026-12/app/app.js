@@ -3,9 +3,9 @@ let currentCandidates = [];
 let customWaypointsList = [];
 let lastGeneratedItineraryData = null;
 let selectedRouteIdx = null;
-
+ 
 const API_BASE_URL = 'http://localhost:8000';
-
+ 
 document.addEventListener('DOMContentLoaded', () => {
     // スライダー表示連動
     const durSlider = document.getElementById('duration-slider');
@@ -16,14 +16,14 @@ document.addEventListener('DOMContentLoaded', () => {
             document.getElementById('duration-hours').textContent = (val / 60).toFixed(1);
         });
     }
-
+ 
     const budgetSlider = document.getElementById('budget-slider');
     if (budgetSlider) {
         budgetSlider.addEventListener('input', (e) => {
             document.getElementById('budget-value').textContent = parseInt(e.target.value, 10).toLocaleString();
         });
     }
-
+ 
     // 旅行日数連動
     const tripDaysSelect = document.getElementById('trip-days');
     if (tripDaysSelect) {
@@ -33,14 +33,14 @@ document.addEventListener('DOMContentLoaded', () => {
             if (multiNote) multiNote.style.display = isMultiDay ? 'block' : 'none';
         });
     }
-
+ 
     // ボタンイベント登録
     document.getElementById('btn-diagnose')?.addEventListener('click', runDiagnosis);
     document.getElementById('btn-retry-diagnose')?.addEventListener('click', runDiagnosis);
     document.getElementById('btn-build')?.addEventListener('click', generateFinalItinerary);
     document.getElementById('btn-favorite')?.addEventListener('click', saveToFavorites);
     document.getElementById('btn-add-waypoint')?.addEventListener('click', addCustomWaypoint);
-
+ 
     // 経由地入力 Enter キー
     document.getElementById('waypoint-input')?.addEventListener('keypress', (e) => {
         if (e.key === 'Enter') {
@@ -48,13 +48,13 @@ document.addEventListener('DOMContentLoaded', () => {
             addCustomWaypoint();
         }
     });
-
+ 
     // 動的タグ削除のイベント委譲
     document.getElementById('waypoints-tag-container')?.addEventListener('click', (e) => {
         const btn = e.target.closest('.btn-remove-wp');
         if (btn) removeCustomWaypoint(parseInt(btn.dataset.index, 10));
     });
-
+ 
     // TOP3カード選択のイベント委譲
     document.getElementById('top3-grid')?.addEventListener('click', (e) => {
         const card = e.target.closest('.rank-card');
@@ -63,13 +63,13 @@ document.addEventListener('DOMContentLoaded', () => {
             selectRoute(idx);
         }
     });
-
+ 
     // 星評価UI
     initStarRating();
-
+ 
     loadFavorites();
 });
-
+ 
 /* --- 経由地タグの操作 --- */
 function addCustomWaypoint() {
     const input = document.getElementById('waypoint-input');
@@ -81,14 +81,14 @@ function addCustomWaypoint() {
         renderWaypointTags();
     }
 }
-
+ 
 function removeCustomWaypoint(index) {
     if (index >= 0 && index < customWaypointsList.length) {
         customWaypointsList.splice(index, 1);
         renderWaypointTags();
     }
 }
-
+ 
 function renderWaypointTags() {
     const container = document.getElementById('waypoints-tag-container');
     if (!container) return;
@@ -99,42 +99,43 @@ function renderWaypointTags() {
         </span>
     `).join('');
 }
-
+ 
 /* --- 5. 診断実行 (TOP3表示) --- */
 async function runDiagnosis() {
     const btnDiagnose = document.getElementById('btn-diagnose');
     const loading = document.getElementById('diagnose-loading');
     const failBanner = document.getElementById('ai-fail-banner');
-
+ 
     if (btnDiagnose) btnDiagnose.disabled = true;
     if (loading) loading.style.display = 'flex';
     if (failBanner) failBanner.style.display = 'none';
-
+ 
     const detailedVector = {};
     document.querySelectorAll('.detailed-vec').forEach(select => {
         const key = select.getAttribute('data-key');
         if (key) detailedVector[key] = parseFloat(select.value);
     });
-
+ 
     const payload = {
         user_text: document.getElementById('user-text-intent')?.value || '',
-        preferences_4step: [2.0, 2.0, 3.0],
+        // preferences_4step は廃止（旧固定値のダミー送信をやめ、10項目こだわり入力(detailed_vector)から
+        // サーバー側で式(1)のψ(b)を構築するようにした）
         detailed_vector: detailedVector,
         target_area: document.getElementById('target-area')?.value || '箱根温泉',
         season: document.getElementById('season-select')?.value || 'winter',
         generation_group: document.getElementById('generation-group')?.value || 'couple',
         custom_reviews_text: document.getElementById('custom-reviews-text')?.value || ''
     };
-
+ 
     try {
         const res = await fetch(`${API_BASE_URL}/diagnose_top3`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload)
         });
-
+ 
         if (!res.ok) throw new Error("API通信エラー");
-
+ 
         const data = await res.json();
         currentCandidates = data.top3_places || [];
         renderTop3(currentCandidates, payload.target_area);
@@ -146,29 +147,29 @@ async function runDiagnosis() {
         if (loading) loading.style.display = 'none';
     }
 }
-
+ 
 function renderTop3(places, areaName) {
     const top3Section = document.getElementById('top3-section');
     if (top3Section) {
         top3Section.style.display = 'block';
         top3Section.scrollIntoView({ behavior: 'smooth' });
     }
-
+ 
     const grid = document.getElementById('top3-grid');
     if (!grid) return;
     grid.innerHTML = '';
-
+ 
     // テーマ別に3コースカードを生成 (5.html のデザイン構造と一致)
     const themes = ["王道定番コース", "グルメ・癒し満喫コース", "穴場・のんびりコース"];
-
+ 
     themes.forEach((themeTitle, idx) => {
         const card = document.createElement('div');
         card.className = 'rank-card';
         card.dataset.idx = idx;
-
+ 
         const score = Math.max(70, 95 - idx * 8);
         const costSum = places.reduce((acc, p) => acc + (p.cost || 0), 0) + (idx * 500);
-
+ 
         const spotItemsHtml = places.map(p => `
             <div>
                 <span class="badge ${p.t_base >= 90 ? 'badge-peak' : 'badge-circuit'}">${p.t_base >= 90 ? 'メイン(120分)' : '周遊(60分)'}</span>
@@ -177,7 +178,7 @@ function renderTop3(places, areaName) {
                 <span class="badge badge-ai">AI提案</span>
             </div>
         `).join('');
-
+ 
         card.innerHTML = `
             <div>
                 <div class="rank-title">${idx === 0 ? "🥇" : idx === 1 ? "🥈" : "🥉"} ${themeTitle}</div>
@@ -190,30 +191,30 @@ function renderTop3(places, areaName) {
         grid.appendChild(card);
     });
 }
-
+ 
 function selectRoute(idx) {
     selectedRouteIdx = idx;
     document.querySelectorAll('.rank-card').forEach((c, i) => {
         c.classList.toggle('selected', i === idx);
     });
-
+ 
     const customSection = document.getElementById('custom-section');
     if (customSection) {
         customSection.style.display = 'block';
         customSection.scrollIntoView({ behavior: 'smooth' });
     }
-
+ 
     const themes = ["王道定番コース", "グルメ・癒し満喫コース", "穴場・のんびりコース"];
     const area = document.getElementById('target-area')?.value || '箱根温泉';
     const startLoc = document.getElementById('start-location')?.value || '東京駅';
     const startTime = document.getElementById('start-time')?.value || '09:00';
-
+ 
     const subTitle = document.getElementById('route-subtitle');
     if (subTitle) {
         subTitle.textContent = `選択コース：${themes[idx]}（${area}）／出発 ${startLoc} ${startTime}`;
     }
 }
-
+ 
 /* --- 6. 旅程しおり生成 --- */
 async function generateFinalItinerary() {
     const btnBuild = document.getElementById('btn-build');
@@ -221,10 +222,10 @@ async function generateFinalItinerary() {
         btnBuild.disabled = true;
         btnBuild.textContent = "AIが実在スポット・移動時間を計算中…";
     }
-
+ 
     const peakInput = document.querySelector('input[name="plan-peak"]:checked');
     const peakValue = peakInput ? peakInput.value : "前半";
-
+ 
     const payload = {
         selected_place_ids: currentCandidates.map(p => p.id),
         candidate_places: currentCandidates,
@@ -240,28 +241,28 @@ async function generateFinalItinerary() {
         budget_limit: parseFloat(document.getElementById('budget-slider')?.value || 50000),
         time_limit: parseFloat(document.getElementById('duration-slider')?.value || 480)
     };
-
+ 
     try {
         const res = await fetch(`${API_BASE_URL}/build_itinerary`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload)
         });
-
+ 
         if (!res.ok) throw new Error("しおり生成API通信エラー");
-
+ 
         const data = await res.json();
         lastGeneratedItineraryData = data;
         
         renderItinerary(data, payload.start_location);
-
+ 
         // 各セクションの表示解放
         document.getElementById('output-section').style.display = 'block';
         document.getElementById('replan-section').style.display = 'block';
         document.getElementById('review-section').style.display = 'block';
-
+ 
         document.getElementById('output-section').scrollIntoView({ behavior: 'smooth' });
-
+ 
     } catch (err) {
         console.error(err);
         alert("旅程の自動生成中にエラーが発生しました。");
@@ -272,29 +273,43 @@ async function generateFinalItinerary() {
         }
     }
 }
-
+ 
 function renderItinerary(data, startLoc) {
     const m = data.metrics || {};
     const metricsArea = document.getElementById('metrics-area');
     if (metricsArea) {
+        const budgetBadge = m.budget_satisfied === false
+            ? '<span class="badge badge-warn">⚠️ 予算上限を超過</span>'
+            : '<span class="badge badge-ok">✔ 予算内</span>';
+        const timeBadge = m.time_satisfied === false
+            ? '<span class="badge badge-warn">⚠️ 時間上限を超過</span>'
+            : '<span class="badge badge-ok">✔ 時間内</span>';
+        const hoursBadge = m.hours_satisfied === false
+            ? '<span class="badge badge-warn">⚠️ 営業時間外の訪問あり</span>'
+            : '<span class="badge badge-ok">✔ 営業時間内</span>';
+ 
         metricsArea.innerHTML = `
             <div class="perf-card cost-style">
-                <div class="perf-title">💰 コスパ節約額 Δg（旅行全体）</div>
+                <div class="perf-title">💰 コスパ節約額 Δg（移動費用）</div>
                 <div class="perf-num">¥${(m.cost_saved_yen || 0).toLocaleString()}</div>
-                <div class="perf-formula">個別手配想定額 ¥${((m.total_cost || 0) * 1.2).toLocaleString()} − 本プラン実費 ¥${(m.total_cost || 0).toLocaleString()}</div>
+                <div class="perf-formula">区間ごとの個別手配運賃想定 − 本プランの移動費用実額</div>
             </div>
             <div class="perf-card time-style">
-                <div class="perf-title">⏱️ タイパ節約時間 Δt（旅行全体）</div>
+                <div class="perf-title">⏱️ タイパ節約時間 Δt（移動時間）</div>
                 <div class="perf-num">${m.time_saved_minutes || 0}分</div>
-                <div class="perf-formula">直行往復ルート想定 − 最適化後の移動時間</div>
+                <div class="perf-formula">最悪の巡回順で移動した場合の想定時間 − 本プランの移動時間</div>
+            </div>
+            <div class="perf-card" style="grid-column: 1 / -1;">
+                <div class="perf-title">🎯 制約充足状況（式3〜5） ／ 体験ピーク適合度 f1 = ${(m.f1_satisfaction ?? 0).toFixed(3)}</div>
+                <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:6px;">${budgetBadge}${timeBadge}${hoursBadge}</div>
             </div>
         `;
     }
-
+ 
     const tlArea = document.getElementById('timeline-area');
     if (!tlArea) return;
     tlArea.innerHTML = '';
-
+ 
     const daySection = document.createElement('div');
     daySection.className = 'day-section';
     daySection.innerHTML = `
@@ -304,45 +319,48 @@ function renderItinerary(data, startLoc) {
         </div>
         <div class="day-timeline"></div>
     `;
-
+ 
     const timelineInner = daySection.querySelector('.day-timeline');
     const [startH, startM] = (data.start_time || "09:00").split(':').map(Number);
     let currentMin = startH * 60 + startM;
     const waypointsForMap = [];
-
+ 
     (data.itinerary || []).forEach((item) => {
         const startTimeStr = formatMinutesToHHMM(currentMin);
-
+ 
         if (item.type === 'transit') {
             currentMin += item.duration_minutes;
             const endTimeStr = formatMinutesToHHMM(currentMin);
-
+ 
             const transitDiv = document.createElement('div');
             transitDiv.className = 'tl-transit';
             transitDiv.textContent = `🚃 電車・バスで移動：${item.from_name} → ${item.to_name}（約${item.duration_minutes}分）（AI検証済み）`;
             timelineInner.appendChild(transitDiv);
-
+ 
         } else if (item.type === 'spot') {
             const placeName = item.place.name;
             waypointsForMap.push(placeName);
-
+ 
             currentMin += item.stay_minutes;
             const endTimeStr = formatMinutesToHHMM(currentMin);
             const isCustomWp = item.is_custom_waypoint;
-
+ 
             const spotDiv = document.createElement('div');
             spotDiv.className = 'timeline-item';
-
+ 
+            const hoursWarning = item.hours_satisfied === false
+                ? '<span class="badge badge-warn">⚠️ 営業時間外の可能性</span>' : '';
+ 
             spotDiv.innerHTML = `
                 <div class="tl-time">${startTimeStr}</div>
                 <div class="tl-badge"></div>
-                <div class="tl-card info">
+                <div class="tl-card ${item.hours_satisfied === false ? 'warning' : 'info'}">
                     <div class="tl-card-head">
                         <span class="tl-card-name">${escapeHtml(placeName)}</span>
                         <span>
                             ${item.is_peak ? '<span class="badge badge-peak">メインピーク</span>' : '<span class="badge badge-circuit">周遊</span>'}
                             ${isCustomWp ? '<span class="badge badge-custom">追加スポット</span>' : ''}
-                            <span class="badge badge-hours">営業 09:00〜17:00</span>
+                            ${hoursWarning}
                         </span>
                     </div>
                     <div class="tl-card-sub">滞在時間 約${item.stay_minutes}分（〜${endTimeStr}）</div>
@@ -351,12 +369,12 @@ function renderItinerary(data, startLoc) {
             timelineInner.appendChild(spotDiv);
         }
     });
-
+ 
     // Googleマップ連携ボタン
     const destName = (data.trip_type === "round_trip") ? startLoc : (waypointsForMap[waypointsForMap.length - 1] || startLoc);
     const waypointsParam = waypointsForMap.filter(name => name !== destName).map(encodeURIComponent).join('|');
     const mapUrl = `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(startLoc)}&destination=${encodeURIComponent(destName)}&waypoints=${waypointsParam}`;
-
+ 
     const mapBtn = document.createElement('a');
     mapBtn.className = 'btn-day-map';
     mapBtn.href = mapUrl;
@@ -364,10 +382,10 @@ function renderItinerary(data, startLoc) {
     mapBtn.rel = 'noopener';
     mapBtn.textContent = '🗺️ 当日のルートをGoogleマップで開く';
     daySection.appendChild(mapBtn);
-
+ 
     tlArea.appendChild(daySection);
 }
-
+ 
 /* --- 7. 動的リプランニング機能 --- */
 const replanToggle = document.getElementById('replan-toggle');
 if (replanToggle) {
@@ -383,14 +401,14 @@ if (replanToggle) {
         }
     });
 }
-
+ 
 document.getElementById('btn-replan')?.addEventListener('click', () => {
     const curLoc = document.getElementById('replan-location')?.value || '現在地';
     const curTime = document.getElementById('replan-time')?.value || '12:00';
     
     const output = document.getElementById('replan-output');
     if (output) output.style.display = 'block';
-
+ 
     const diffBox = document.getElementById('replan-diff');
     if (diffBox) {
         diffBox.innerHTML = `
@@ -401,12 +419,12 @@ document.getElementById('btn-replan')?.addEventListener('click', () => {
         `;
     }
 });
-
+ 
 /* --- 8. 口コミ評価機能 --- */
 function initStarRating() {
     const ratingBox = document.getElementById('star-rating');
     if (!ratingBox) return;
-
+ 
     let selectedStar = 0;
     ratingBox.addEventListener('click', (e) => {
         const span = e.target.closest('span');
@@ -418,7 +436,7 @@ function initStarRating() {
             });
         }
     });
-
+ 
     document.getElementById('btn-submit-review')?.addEventListener('click', () => {
         if (selectedStar === 0) {
             alert("評価を選択してください。");
@@ -427,7 +445,7 @@ function initStarRating() {
         alert("評価を送信しました。ご協力ありがとうございます。");
     });
 }
-
+ 
 /* --- お気に入り機能 --- */
 function saveToFavorites() {
     if (!lastGeneratedItineraryData) return;
@@ -435,18 +453,18 @@ function saveToFavorites() {
     const area = document.getElementById('target-area')?.value || '箱根温泉';
     const startTime = document.getElementById('start-time')?.value || '09:00';
     const title = `${area} 旅程 (${startTime}発)`;
-
+ 
     favs.push({ title, date: '2026/8/7', data: lastGeneratedItineraryData });
     localStorage.setItem('my_favorite_itineraries', JSON.stringify(favs));
     alert('⭐ この旅程をお気に入りに保存しました！');
     loadFavorites();
 }
-
+ 
 function loadFavorites() {
     const favs = JSON.parse(localStorage.getItem('my_favorite_itineraries') || '[]');
     const container = document.getElementById('favorites-list');
     if (!container) return;
-
+ 
     container.innerHTML = favs.map((f, i) => `
         <div style="background:#f8fafc; padding:10px 14px; border-radius:8px; border:1px solid #e2e8f0; margin-bottom:8px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
             <div>
@@ -460,13 +478,13 @@ function loadFavorites() {
         </div>
     `).join('');
 }
-
+ 
 function formatMinutesToHHMM(totalMinutes) {
     const h = Math.floor((totalMinutes % 1440) / 60);
     const m = totalMinutes % 60;
     return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
 }
-
+ 
 function escapeHtml(str) {
     if (!str) return '';
     return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');

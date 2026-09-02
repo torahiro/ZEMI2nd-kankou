@@ -4,33 +4,33 @@ body { font-family: sans-serif; padding: 25px; background: #f4f7f9; color: #333;
 header { text-align: center; margin-bottom: 25px; }
 h1 { color: #1e3a8a; font-size: 1.8rem; }
 .subtitle { color: #64748b; font-size: 0.9rem; }
-
+ 
 .card { background: white; padding: 20px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); margin-bottom: 20px; }
 .section-title { font-size: 1.1rem; color: #1e3a8a; border-left: 4px solid #2563eb; padding-left: 8px; font-weight: bold; margin-bottom: 15px; }
-
+ 
 .flex-inputs { display: flex; gap: 10px; flex-wrap: wrap; }
 .flex-inputs > div { flex: 1; min-width: 180px; }
 .input-text, .pref-select, .textarea-input { width: 100%; padding: 8px; border: 1px solid #cbd5e1; border-radius: 6px; box-sizing: border-box; }
-
+ 
 .preference-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; }
 .pref-item { background: #f8fafc; padding: 8px; border-radius: 6px; border: 1px solid #e2e8f0; }
-
+ 
 .radio-group { display: flex; gap: 15px; }
 .radio-label { font-weight: bold; cursor: pointer; }
 .slider { width: 100%; }
-
+ 
 .btn-primary { background: #2563eb; color: white; border: none; padding: 12px; font-weight: bold; border-radius: 6px; cursor: pointer; width: 100%; }
-
+ 
 .top3-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin-top: 10px; }
 .rank-card { background: #fafbfc; border: 1px solid #e2e8f0; border-top: 4px solid #2563eb; padding: 12px; border-radius: 8px; }
 .score-display { color: #d97706; font-weight: bold; }
-
+ 
 .performance-box { display: flex; gap: 10px; }
 .perf-card { flex: 1; padding: 12px; border-radius: 8px; border: 2px solid #e2e8f0; text-align: center; }
 .perf-card.cost-style { background: #fffbeb; border-color: #f59e0b; }
 .perf-card.time-style { background: #ecfeff; border-color: #06b6d4; }
 .perf-num { font-size: 1.3rem; font-weight: 800; }
-
+ 
 .divider { border-top: 2px solid #e2e8f0; margin-top: 20px; padding-top: 15px; }
 .tl-transit { background: #e0f2fe; color: #0369a1; padding: 8px; border-radius: 6px; font-size: 0.85rem; margin: 8px 0; text-align: center; font-weight: bold; }
 .timeline-item { display: flex; gap: 10px; margin-bottom: 8px; }
@@ -40,9 +40,9 @@ h1 { color: #1e3a8a; font-size: 1.8rem; }
 .tl-card.info { background: #eff6ff; border-left: 4px solid #3b82f6; }
 .tl-card.warning { background: #fefce8; border-left: 4px solid #eab308; }
 .peak-tag { color: #d97706; font-weight: bold; }
-
+ 
 .btn-day-map { background: #0284c7; color: white; text-align: center; text-decoration: none; display: block; padding: 10px; border-radius: 6px; font-weight: bold; margin-top: 15px; }
-
+ 
 /* style.css 内に追加 */
 .btn-fav {
     background-color: #f59e0b;
@@ -54,3 +54,7 @@ h1 { color: #1e3a8a; font-size: 1.8rem; }
     cursor: pointer;
 }
 .btn-fav:hover { background-color: #d97706; }
+ 
+/* 式(3)-(5) 制約充足バッジ */
+.badge-ok { background: #dcfce7; color: #166534; padding: 3px 8px; border-radius: 10px; font-size: 0.78rem; font-weight: bold; }
+.badge-warn { background: #fee2e2; color: #b91c1c; padding: 3px 8px; border-radius: 10px; font-size: 0.78rem; font-weight: bold; }
