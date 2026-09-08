@@ -159,32 +159,37 @@ function renderTop3(places, areaName) {
     if (!grid) return;
     grid.innerHTML = '';
  
-    // テーマ別に3コースカードを生成 (5.html のデザイン構造と一致)
+    // テーマ別に3コースカードを生成。以前は3枚とも同じ候補リストを丸ごと表示していたため
+    // 見た目上「どのカードも同じ目的地しか出ない」状態だった。診断スコア1〜3位の候補を
+    // それぞれ別々のカードに1件ずつ割り当て、3枚で異なる目的地になるようにする。
     const themes = ["王道定番コース", "グルメ・癒し満喫コース", "穴場・のんびりコース"];
  
     themes.forEach((themeTitle, idx) => {
+        const place = places[idx];
+        if (!place) return; // 候補がテーマ数（3件）に満たない場合、そのカードは生成しない
+ 
         const card = document.createElement('div');
         card.className = 'rank-card';
         card.dataset.idx = idx;
  
-        const score = Math.max(70, 95 - idx * 8);
-        const costSum = places.reduce((acc, p) => acc + (p.cost || 0), 0) + (idx * 500);
+        const score = place.score ?? Math.max(70, 95 - idx * 8);
+        const cost = place.cost || 0;
  
-        const spotItemsHtml = places.map(p => `
+        const spotItemHtml = `
             <div>
-                <span class="badge ${p.t_base >= 90 ? 'badge-peak' : 'badge-circuit'}">${p.t_base >= 90 ? 'メイン(120分)' : '周遊(60分)'}</span>
-                ${escapeHtml(p.name)}
+                <span class="badge ${place.t_base >= 90 ? 'badge-peak' : 'badge-circuit'}">${place.t_base >= 90 ? 'メイン(120分)' : '周遊(60分)'}</span>
+                ${escapeHtml(place.name)}
                 <span class="badge badge-hours">09:00〜17:00</span>
                 <span class="badge badge-ai">AI提案</span>
             </div>
-        `).join('');
+        `;
  
         card.innerHTML = `
             <div>
                 <div class="rank-title">${idx === 0 ? "🥇" : idx === 1 ? "🥈" : "🥉"} ${themeTitle}</div>
                 <div class="score-display">適合スコア ${score} / 100</div>
-                <div class="rank-spotlist">${spotItemsHtml}</div>
-                <div class="rank-meta">想定入場料合計: ¥${costSum.toLocaleString()} ／ ${places.length}スポット候補</div>
+                <div class="rank-spotlist">${spotItemHtml}</div>
+                <div class="rank-meta">想定入場料: ¥${cost.toLocaleString()}</div>
             </div>
             <button type="button" class="rank-pick-btn">このコースを選択</button>
         `;
@@ -208,10 +213,12 @@ function selectRoute(idx) {
     const area = document.getElementById('target-area')?.value || '箱根温泉';
     const startLoc = document.getElementById('start-location')?.value || '東京駅';
     const startTime = document.getElementById('start-time')?.value || '09:00';
+    const chosenPlace = currentCandidates[idx];
  
     const subTitle = document.getElementById('route-subtitle');
     if (subTitle) {
-        subTitle.textContent = `選択コース：${themes[idx]}（${area}）／出発 ${startLoc} ${startTime}`;
+        const spotLabel = chosenPlace ? `：${chosenPlace.name}` : '';
+        subTitle.textContent = `選択コース：${themes[idx]}${spotLabel}（${area}）／出発 ${startLoc} ${startTime}`;
     }
 }
  
@@ -226,9 +233,14 @@ async function generateFinalItinerary() {
     const peakInput = document.querySelector('input[name="plan-peak"]:checked');
     const peakValue = peakInput ? peakInput.value : "前半";
  
+    // 3カードは別々の目的地を表すため、選択したカード1件だけを旅程のメインスポットにする
+    // （以前はカード選択に関わらず常にTOP3全件をまとめて旅程化していた）。
+    const selectedPlace = currentCandidates[selectedRouteIdx] ?? currentCandidates[0];
+    const selectedPlaces = selectedPlace ? [selectedPlace] : [];
+ 
     const payload = {
-        selected_place_ids: currentCandidates.map(p => p.id),
-        candidate_places: currentCandidates,
+        selected_place_ids: selectedPlaces.map(p => p.id),
+        candidate_places: selectedPlaces,
         custom_waypoints: customWaypointsList,
         start_location: document.getElementById('start-location')?.value || '東京駅',
         start_time: document.getElementById('start-time')?.value || "09:00",
