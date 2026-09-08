@@ -13,8 +13,8 @@ OVERPASS_ENDPOINTS = [
     "https://overpass.private.coffee/api/interpreter",
 ]
 OVERPASS_HEADERS = {"User-Agent": "peak-aware-tourism-itinerary-app/1.0 (educational project)"}
-SEARCH_RADIUS_METERS = 5000  # target_area中心からの検索半径
-MAX_POI_RESULTS = 10  # スコアリング対象の候補地数（多いほどTOP3の多様性が出る）
+SEARCH_RADIUS_METERS = 7000  # target_area中心からの検索半径（5000mだと郊外の温泉地等で候補が枯渇しやすいため拡大）
+MAX_POI_RESULTS = 15  # スコアリング対象の候補地数（多いほどTOP3の多様性が出る）
  
 # 環境変数にGoogle Maps Platform(Places API)のAPIキーが設定されている場合、
 # OSM Overpassより先にGoogle Places Text Searchを優先的に使う（未設定なら従来通りOSMのみ）。
@@ -206,30 +206,49 @@ async def fetch_places_dynamically(target_area: str) -> List[Dict[str, Any]]:
     半径検索(around)に切り替えることで、地名表記のゆれに影響されず実データを取得する。
     """
     lon, lat = await geocode_location(target_area)
+    # 「観光・グルメ・癒し」の3分類にできるだけ幅広くヒットするよう、タグを拡張。
+    # 特に自然景勝地（滝・海岸・山頂・温泉地形）や史跡はtourismタグを持たないことが多く、
+    # 従来のtourism/amenity/leisureのみの絞り込みでは実質1〜2件しか候補が拾えないエリアがあった。
+    # また ["name"] を各フィルタに付けてOverpass側で名称なしノードを除外することで、
+    # out body の件数上限を「名前つき候補」で使い切れるようにしている（無名ノードで枠を無駄にしない）。
     query = f"""
-    [out:json][timeout:15];
+    [out:json][timeout:20];
     (
-      node["tourism"~"attraction|museum|viewpoint"](around:{SEARCH_RADIUS_METERS},{lat},{lon});
-      node["amenity"~"restaurant|cafe|public_bath"](around:{SEARCH_RADIUS_METERS},{lat},{lon});
-      node["leisure"~"spa"](around:{SEARCH_RADIUS_METERS},{lat},{lon});
+      node["tourism"~"attraction|museum|viewpoint|artwork|gallery|zoo|theme_park"]["name"](around:{SEARCH_RADIUS_METERS},{lat},{lon});
+      node["amenity"~"restaurant|cafe|public_bath|bar|fast_food"]["name"](around:{SEARCH_RADIUS_METERS},{lat},{lon});
+      node["leisure"~"spa|park|garden"]["name"](around:{SEARCH_RADIUS_METERS},{lat},{lon});
+      node["natural"~"waterfall|beach|peak|hot_spring"]["name"](around:{SEARCH_RADIUS_METERS},{lat},{lon});
+      node["historic"]["name"](around:{SEARCH_RADIUS_METERS},{lat},{lon});
     );
-    out body {MAX_POI_RESULTS * 3};
+    out body {MAX_POI_RESULTS * 6};
     """
  
     elements = await _fetch_from_overpass(query)
     osm_results = []
+    seen_names = set()
     if elements:
         for elem in elements:
             tags = elem.get("tags", {})
             name = tags.get("name")
-            if not name:
+            # OSMは同一スポットが複数ノード（建物・出入口・別表記など）で重複登録されていることが多く、
+            # ここで除外しないとdiagnose_top3側で同名スポットがTOP3を占有してしまう
+            # （「特定の1スポットしか表示されない」不具合の主因）。
+            if not name or name in seen_names:
                 continue
+            seen_names.add(name)
  
             types = []
             if "tourism" in tags: types.append("tourist_attraction")
-            if "amenity" in tags and tags["amenity"] in ["restaurant", "cafe"]: types.append("restaurant")
-            if ("amenity" in tags and tags["amenity"] == "public_bath") or ("leisure" in tags and tags["leisure"] == "spa"):
+            if "historic" in tags: types.append("tourist_attraction")
+            if "amenity" in tags and tags["amenity"] in ["restaurant", "cafe", "bar", "fast_food"]: types.append("restaurant")
+            if "leisure" in tags and tags["leisure"] in ["park", "garden"]: types.append("tourist_attraction")
+            if "natural" in tags and tags["natural"] in ["waterfall", "beach", "peak"]: types.append("tourist_attraction")
+            if ("amenity" in tags and tags["amenity"] == "public_bath") or \
+               ("leisure" in tags and tags["leisure"] == "spa") or \
+               ("natural" in tags and tags["natural"] == "hot_spring"):
                 types.append("spa")
+            if not types:
+                types.append("tourist_attraction")
  
             open_hour, close_hour = _default_hours(types)
             osm_results.append({
@@ -250,18 +269,15 @@ async def fetch_places_dynamically(target_area: str) -> List[Dict[str, Any]]:
     if TRIPADVISOR_API_KEY:
         tripadvisor_results = await _fetch_from_tripadvisor(target_area)
         if tripadvisor_results:
-            return tripadvisor_results
+            return _merge_unique(osm_results, tripadvisor_results)[:MAX_POI_RESULTS]
  
     if GOOGLE_MAPS_API_KEY:
         google_results = await _fetch_from_google_places(target_area)
         if google_results:
-            return google_results
+            return _merge_unique(osm_results, google_results)[:MAX_POI_RESULTS]
  
-    if osm_results:
-        # 補完APIが無い/失敗しても、OSMで多少なりとも取れていればそれを優先して返す
-        return osm_results[:MAX_POI_RESULTS]
- 
-    # フォールバック用データセット
+    # フォールバック用データセット（テンプレ名だが、実データが少ないエリアでも
+    # TOP3が同一スポットの重複表示にならないよう、実データに不足分だけ補完する）
     fallback = [
         {"name": f"{target_area}の名物グルメ通り", "keyword": target_area, "types": ["restaurant"], "lat": 35.2333, "lon": 139.1036, "price_level": 2},
         {"name": f"{target_area}の歴史・景勝スポット", "keyword": target_area, "types": ["tourist_attraction"], "lat": 35.2400, "lon": 139.1100, "price_level": 1},
@@ -270,18 +286,49 @@ async def fetch_places_dynamically(target_area: str) -> List[Dict[str, Any]]:
     ]
     for place in fallback:
         place["open_hour"], place["close_hour"] = _default_hours(place["types"])
+ 
+    if osm_results:
+        # 実データが1〜2件でもゼロにはせず、不足分だけテンプレ候補で補って多様性を確保する
+        return _merge_unique(osm_results, fallback)[:MAX_POI_RESULTS]
+ 
     return fallback
+ 
+ 
+def _merge_unique(primary: List[Dict[str, Any]], supplement: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """primaryを優先しつつ、name重複を避けてsupplementで不足分を埋める"""
+    merged = list(primary)
+    seen = {p["name"] for p in primary}
+    for item in supplement:
+        if item["name"] not in seen:
+            merged.append(item)
+            seen.add(item["name"])
+    return merged
  
 def analyze_reviews_and_build_vector(place: Dict[str, Any], custom_reviews: str) -> List[float]:
     """
-    OSMの属性とテキストから特徴ベクトル c_i = [gourmet, sightseeing, healing] を計算。
+    OSMの属性(types)とテキストから特徴ベクトル c_i = [gourmet, sightseeing, healing] を計算。
+ 
+    以前はtypesと名前キーワードを同じ"OR"条件で判定していたため、名前に含まれる
+    1文字の部分一致だけで基礎スコアが0.9まで跳ね上がってしまっていた。例えば「岩滝寺滝」は
+    natural=waterfall（滝）にもかかわらず、地名の「寺」の文字だけを拾ってsightseeingが
+    最高評価になり、結果としてこの1件だけが繰り返し上位を占有する偏りの一因になっていた。
+    そのためtypes（構造化タグ、dynamic_fetcher側で滝・史跡なども正しくtourist_attraction等に
+    分類済み）を基礎スコアの決定要因とし、名前キーワードはあくまで小幅な加点に留める。
     """
     types = place.get("types", [])
     name = place.get("name", "")
  
-    gourmet = 0.9 if "restaurant" in types or any(w in name for w in ["グルメ", "名店", "飯", "食堂"]) else 0.3
-    sightseeing = 0.9 if "tourist_attraction" in types or any(w in name for w in ["観光", "絶景", "寺", "神社", "城", "公園"]) else 0.4
-    healing = 0.9 if "spa" in types or any(w in name for w in ["温泉", "湯", "癒", "スパ"]) else 0.2
+    gourmet = 0.9 if "restaurant" in types else 0.3
+    sightseeing = 0.9 if "tourist_attraction" in types else 0.4
+    healing = 0.9 if "spa" in types else 0.2
+ 
+    # 名前によるキーワード加点（型のスコアを上書きせず、上限1.0まで小幅に補正するだけ）
+    if any(w in name for w in ["グルメ", "名店", "名物", "食堂"]):
+        gourmet = min(1.0, gourmet + 0.2)
+    if any(w in name for w in ["観光", "絶景", "神社", "城", "公園"]):
+        sightseeing = min(1.0, sightseeing + 0.2)
+    if any(w in name for w in ["温泉", "湯", "癒", "スパ"]):
+        healing = min(1.0, healing + 0.2)
  
     if custom_reviews:
         text = custom_reviews.lower()

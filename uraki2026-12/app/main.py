@@ -58,6 +58,43 @@ class GenerateItineraryRequest(BaseModel):
     budget_limit: float
     time_limit: float
  
+def _select_diverse_top3(scored_places: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """
+    式(2)のスコア降順だけでTOP3を選ぶと、gourmet/sightseeing/healingのいずれか1系統が
+    たまたま高得点になった時、3枠すべてが似た系統（極端な場合は同じスポット）に偏りやすい。
+    3系統それぞれの最高得点候補を1件ずつ優先的に選び、TOP3が自然と別々の目的地・別々の
+    体験タイプ（グルメ／観光／癒し）になるようにする。系統に候補が無い場合のみ、
+    残り枠をスコア降順で埋める。
+    """
+    by_category: Dict[int, List[Dict[str, Any]]] = {0: [], 1: [], 2: []}
+    for p in scored_places:
+        dominant = max(range(3), key=lambda i: p["category_vector"][i])
+        by_category[dominant].append(p)
+    for cat in by_category:
+        by_category[cat].sort(key=lambda x: x["score"], reverse=True)
+ 
+    top3: List[Dict[str, Any]] = []
+    used_names = set()
+    for cat in (0, 1, 2):
+        if by_category[cat]:
+            pick = by_category[cat][0]
+            top3.append(pick)
+            used_names.add(pick["name"])
+ 
+    if len(top3) < 3:
+        remaining = sorted(
+            [p for p in scored_places if p["name"] not in used_names],
+            key=lambda x: x["score"], reverse=True
+        )
+        for p in remaining:
+            if len(top3) >= 3:
+                break
+            top3.append(p)
+            used_names.add(p["name"])
+ 
+    return sorted(top3, key=lambda x: x["score"], reverse=True)[:3]
+ 
+ 
 @app.post("/diagnose_top3")
 async def diagnose_top3(req: DiagnoseRequest):
     area = req.target_area.strip() if req.target_area.strip() else "箱根温泉"
@@ -99,7 +136,7 @@ async def diagnose_top3(req: DiagnoseRequest):
             "reviews": [f"{raw['name']}の特徴"]
         })
  
-    top3 = sorted(scored_places, key=lambda x: x["score"], reverse=True)[:3]
+    top3 = _select_diverse_top3(scored_places)
     return {
         "status": "success",
         "target_area": area,
