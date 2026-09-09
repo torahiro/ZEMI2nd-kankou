@@ -3,6 +3,12 @@ let currentCandidates = [];
 let customWaypointsList = [];
 let lastGeneratedItineraryData = null;
 let selectedRouteIdx = null;
+let lastDetailedVector = {}; // 診断時の「10項目こだわり」入力を旅程生成側でも使うため保持（滞在ペース等に反映）
+let mainPeakPlace = null;    // 選択したメインピーク（式7・8のτ^peak/ピーク重みを適用する唯一の対象）
+// TOP3のうち選ばなかった残りを「AIが自動提案する経由地」として初期セットしたもの。
+// 以前は経由地は完全に手動入力のみだったが、しおりは最初から経由地込みで自動提案し、
+// そこから自分で削除（不要なら✕で外す）できるようにする。
+let autoWaypoints = [];
  
 const API_BASE_URL = 'http://localhost:8000';
  
@@ -55,6 +61,12 @@ document.addEventListener('DOMContentLoaded', () => {
         if (btn) removeCustomWaypoint(parseInt(btn.dataset.index, 10));
     });
  
+    // AI自動提案の経由地（TOP3のうち選ばなかった残り）の削除ボタン
+    document.getElementById('auto-waypoints-list')?.addEventListener('click', (e) => {
+        const btn = e.target.closest('.btn-remove-auto-wp');
+        if (btn) removeAutoWaypoint(parseInt(btn.dataset.index, 10));
+    });
+ 
     // TOP3カード選択のイベント委譲
     document.getElementById('top3-grid')?.addEventListener('click', (e) => {
         const card = e.target.closest('.rank-card');
@@ -100,6 +112,41 @@ function renderWaypointTags() {
     `).join('');
 }
  
+/* --- AI自動提案の経由地（TOP3のうち選ばなかった残り）の操作 --- */
+function removeAutoWaypoint(index) {
+    if (index >= 0 && index < autoWaypoints.length) {
+        autoWaypoints.splice(index, 1);
+        renderAutoWaypoints();
+    }
+}
+ 
+function renderAutoWaypoints() {
+    const container = document.getElementById('auto-waypoints-list');
+    if (!container) return;
+    if (autoWaypoints.length === 0) {
+        container.innerHTML = '<span style="font-size:0.85rem; color:#94a3b8;">（自動提案できる残りの候補地はありません）</span>';
+        return;
+    }
+    container.innerHTML = autoWaypoints.map((wp, idx) => `
+        <span class="waypoint-tag auto">
+            🤖 ${escapeHtml(wp.name)}
+            <button type="button" class="btn-remove-auto-wp" data-index="${idx}" title="この経由地を旅程から外す">✕</button>
+        </span>
+    `).join('');
+}
+ 
+function renderDroppedNotice(names) {
+    const el = document.getElementById('dropped-notice');
+    if (!el) return;
+    if (!names || names.length === 0) {
+        el.style.display = 'none';
+        el.innerHTML = '';
+        return;
+    }
+    el.style.display = 'block';
+    el.innerHTML = `⚠️ 予算・時間・営業時間の制約に収めるため、以下の経由地は今回の旅程から自動的に除外されました：${names.map(escapeHtml).join('、')}`;
+}
+ 
 /* --- 5. 診断実行 (TOP3表示) --- */
 async function runDiagnosis() {
     const btnDiagnose = document.getElementById('btn-diagnose');
@@ -115,6 +162,7 @@ async function runDiagnosis() {
         const key = select.getAttribute('data-key');
         if (key) detailedVector[key] = parseFloat(select.value);
     });
+    lastDetailedVector = detailedVector; // 旅程生成(build_itinerary)側の滞在ペース調整で再利用する
  
     const payload = {
         user_text: document.getElementById('user-text-intent')?.value || '',
@@ -124,7 +172,19 @@ async function runDiagnosis() {
         target_area: document.getElementById('target-area')?.value || '箱根温泉',
         season: document.getElementById('season-select')?.value || 'winter',
         generation_group: document.getElementById('generation-group')?.value || 'couple',
-        custom_reviews_text: document.getElementById('custom-reviews-text')?.value || ''
+        custom_reviews_text: document.getElementById('custom-reviews-text')?.value || '',
+        // 出発時間・出発地点・到着地点・費用・移動手段・行程タイプの制約。以前は旅程生成の
+        // 段階でしか使っていなかったため、選んだ候補が実は予算・時間・営業時間に収まらない、
+        // ということが旅程生成まで分からなかった。診断（TOP3提案）の時点から渡すことで、
+        // 制約内に収まる候補を優先して提案してもらう。
+        start_location: document.getElementById('start-location')?.value || '東京駅',
+        end_location: document.getElementById('end-location-place')?.value?.trim() || '',
+        start_time: document.getElementById('start-time')?.value || '09:00',
+        transport_mode: document.getElementById('transport-mode')?.value || 'transit',
+        trip_type: document.getElementById('trip-type')?.value || 'round_trip',
+        budget_limit: parseFloat(document.getElementById('budget-slider')?.value || 50000),
+        time_limit: parseFloat(document.getElementById('duration-slider')?.value || 480),
+        member_count: parseInt(document.getElementById('member-count')?.value || 1, 10)
     };
  
     try {
@@ -184,12 +244,31 @@ function renderTop3(places, areaName) {
             </div>
         `;
  
+        // fits_constraints等は、出発時間・出発地点・到着地点・費用・移動手段・行程タイプの
+        // 制約を診断時に渡した場合のみ付与される（未指定なら undefined のまま＝表示しない）。
+        let constraintHtml = '';
+        if (place.fits_constraints === true) {
+            constraintHtml = `
+                <div class="rank-meta">
+                    <span class="badge badge-ok">✔ 指定した制約内で成立</span>
+                    見積り費用 ¥${(place.estimated_total_cost || 0).toLocaleString()} ／ 所要 約${place.estimated_total_time_minutes || 0}分
+                </div>`;
+        } else if (place.fits_constraints === false) {
+            const reasons = (place.violation_reasons || []).join('・');
+            constraintHtml = `
+                <div class="rank-meta">
+                    <span class="badge badge-warn">⚠️ ${escapeHtml(reasons || '制約を満たせない可能性')}</span>
+                    見積り費用 ¥${(place.estimated_total_cost || 0).toLocaleString()} ／ 所要 約${place.estimated_total_time_minutes || 0}分
+                </div>`;
+        }
+ 
         card.innerHTML = `
             <div>
                 <div class="rank-title">${idx === 0 ? "🥇" : idx === 1 ? "🥈" : "🥉"} ${themeTitle}</div>
                 <div class="score-display">適合スコア ${score} / 100</div>
                 <div class="rank-spotlist">${spotItemHtml}</div>
                 <div class="rank-meta">想定入場料: ¥${cost.toLocaleString()}</div>
+                ${constraintHtml}
             </div>
             <button type="button" class="rank-pick-btn">このコースを選択</button>
         `;
@@ -215,6 +294,12 @@ function selectRoute(idx) {
     const startTime = document.getElementById('start-time')?.value || '09:00';
     const chosenPlace = currentCandidates[idx];
  
+    // 選んだカードをメインピークとし、TOP3のうち選ばなかった残りをAI自動提案の経由地として
+    // 初期セットする。以前は経由地は完全に手動入力のみだったが、ここから自分で✕で削除できる。
+    mainPeakPlace = chosenPlace || null;
+    autoWaypoints = currentCandidates.filter((p, i) => i !== idx && p);
+    renderAutoWaypoints();
+ 
     const subTitle = document.getElementById('route-subtitle');
     if (subTitle) {
         const spotLabel = chosenPlace ? `：${chosenPlace.name}` : '';
@@ -233,16 +318,23 @@ async function generateFinalItinerary() {
     const peakInput = document.querySelector('input[name="plan-peak"]:checked');
     const peakValue = peakInput ? peakInput.value : "前半";
  
-    // 3カードは別々の目的地を表すため、選択したカード1件だけを旅程のメインスポットにする
-    // （以前はカード選択に関わらず常にTOP3全件をまとめて旅程化していた）。
-    const selectedPlace = currentCandidates[selectedRouteIdx] ?? currentCandidates[0];
-    const selectedPlaces = selectedPlace ? [selectedPlace] : [];
+    // メインピーク（選択したカード）＋ AI自動提案の経由地（✕で外していない残り）を、
+    // まとめて旅程の対象にする。以前は選択したカード1件のみで、経由地は手動入力しないと
+    // 一切含まれなかったが、しおりは最初から経由地込みで自動提案されるようにする。
+    const mainPeak = mainPeakPlace ?? currentCandidates[selectedRouteIdx] ?? currentCandidates[0];
+    const selectedPlaces = [mainPeak, ...autoWaypoints].filter(Boolean);
  
     const payload = {
         selected_place_ids: selectedPlaces.map(p => p.id),
         candidate_places: selectedPlaces,
+        // どれが「本当のメインピーク」（式7・8のτ^peak・ピーク重み適用対象）かをバックエンドに
+        // 明示する。selected_placesにはAI自動提案の経由地も混ざっているため必須。
+        main_peak_place_id: mainPeak?.id || "",
         custom_waypoints: customWaypointsList,
         start_location: document.getElementById('start-location')?.value || '東京駅',
+        // 出発地と異なる到着地点（任意）。未入力なら空文字のままバックエンド側で
+        // 従来通り trip_type（往復／片道）に基づいて終着点を決める。
+        end_location: document.getElementById('end-location-place')?.value?.trim() || "",
         start_time: document.getElementById('start-time')?.value || "09:00",
         end_time: document.getElementById('end-time')?.value || "",
         trip_type: document.getElementById('trip-type')?.value || "round_trip",
@@ -251,7 +343,12 @@ async function generateFinalItinerary() {
         member_count: parseInt(document.getElementById('member-count')?.value || 1, 10),
         peak_position: peakValue,
         budget_limit: parseFloat(document.getElementById('budget-slider')?.value || 50000),
-        time_limit: parseFloat(document.getElementById('duration-slider')?.value || 480)
+        time_limit: parseFloat(document.getElementById('duration-slider')?.value || 480),
+        // packed_schedule/relax_schedule（過密⇔ゆっくり）を旅程側の滞在時間ペースにも反映するため送る
+        detailed_vector: lastDetailedVector,
+        // 経由地（自由入力テキスト）のジオコーディング精度向上のためのヒント（診断時のエリア指定と同じ）。
+        // 例:「ミラノ亭」のような曖昧な店名が全国の同名店と混同されるのを防ぐために使う。
+        target_area: document.getElementById('target-area')?.value || '箱根温泉'
     };
  
     try {
@@ -265,8 +362,10 @@ async function generateFinalItinerary() {
  
         const data = await res.json();
         lastGeneratedItineraryData = data;
-        
+ 
         renderItinerary(data, payload.start_location);
+        // 予算・時間・営業時間に収めるため自動的に外された経由地があれば通知する
+        renderDroppedNotice(data.dropped_names);
  
         // 各セクションの表示解放
         document.getElementById('output-section').style.display = 'block';
@@ -383,7 +482,11 @@ function renderItinerary(data, startLoc) {
     });
  
     // Googleマップ連携ボタン
-    const destName = (data.trip_type === "round_trip") ? startLoc : (waypointsForMap[waypointsForMap.length - 1] || startLoc);
+    // final_destination はバックエンドが実際に計算した終着点（到着地点指定があればそれ、
+    // なければ往復=出発地／片道=最終訪問地）。以前はフロント側でtrip_typeだけから
+    // 推測していたが、到着地点を明示指定できるようにしたのに合わせてバックエンドの
+    // 計算結果をそのまま使うようにする。
+    const destName = data.final_destination || ((data.trip_type === "round_trip") ? startLoc : (waypointsForMap[waypointsForMap.length - 1] || startLoc));
     const waypointsParam = waypointsForMap.filter(name => name !== destName).map(encodeURIComponent).join('|');
     const mapUrl = `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(startLoc)}&destination=${encodeURIComponent(destName)}&waypoints=${waypointsParam}`;
  
@@ -492,9 +595,13 @@ function loadFavorites() {
 }
  
 function formatMinutesToHHMM(totalMinutes) {
+    // 日付をまたぐ移動・滞在（例: 900分の移動で翌日にずれ込む場合）でも「00:00」だけが表示されて
+    // 前日の続きなのか当日なのか分からなくなる問題を避けるため、日をまたいだ分だけ「+N日」を付ける。
+    const dayOffset = Math.floor(totalMinutes / 1440);
     const h = Math.floor((totalMinutes % 1440) / 60);
     const m = totalMinutes % 60;
-    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+    const clock = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+    return dayOffset > 0 ? `${clock}（+${dayOffset}日）` : clock;
 }
  
 function escapeHtml(str) {

@@ -4,7 +4,15 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI旅プロデュースナビゲーター</title>
+    <!-- 開発中にファイルを差し替えても、ブラウザ側が古いapp.jsをキャッシュしたまま読み込み続け、
+         直したはずの不具合が再現するのを防ぐためのキャッシュ無効化指定。
+         あわせてapp.jsの読み込みには ?v=... のバージョン番号を付けており（下部のscriptタグ参照）、
+         ファイルを更新するたびにこの番号を上げることでブラウザに「別のファイル」と認識させ、
+         強制リロードしなくても最新版が読み込まれるようにしている。 -->
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
+    <title>タビッグ｜旅行先を一発で決める</title>
     <style>
         body {
             font-family: 'Helvetica Neue', Arial, "Hiragino Kaku Gothic ProN", "Hiragino Sans", Meiryo, sans-serif;
@@ -18,7 +26,7 @@
         header { text-align: center; margin-bottom: 40px; }
         h1 { color: #2b5c8f; font-size: 2.3rem; margin-bottom: 10px; }
         .subtitle { color: #64748b; font-size: 1rem; }
-
+ 
         .card { background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); margin-bottom: 25px; }
         .section-title { font-size: 1.2rem; margin-bottom: 20px; color: #2b5c8f; border-left: 4px solid #2b5c8f; padding-left: 10px; font-weight: bold; }
         
@@ -35,26 +43,26 @@
         
         .radio-group { display: flex; gap: 15px; margin-bottom: 10px; flex-wrap: wrap; }
         .radio-label { display: flex; align-items: center; gap: 6px; font-weight: bold; cursor: pointer; }
-
+ 
         .slider-box { margin-bottom: 20px; }
         .slider-display { font-size: 1.5rem; font-weight: bold; color: #007aff; text-align: center; margin-bottom: 5px; }
         .slider { width: 100%; -webkit-appearance: none; height: 8px; border-radius: 4px; background: #e4e7eb; outline: none; }
         .slider::-webkit-slider-thumb { -webkit-appearance: none; width: 22px; height: 22px; border-radius: 50%; background: #007aff; cursor: pointer; }
-
+ 
         .preference-table { width: 100%; border-collapse: collapse; }
         .preference-table td { padding: 8px 4px; font-size: 0.95rem; }
         .select-weight { width: 100%; padding: 8px; border: 1px solid #e2e8f0; border-radius: 6px; background-color: #fff; cursor: pointer; }
-
+ 
         .btn-primary { background-color: #007aff; color: white; border: none; padding: 14px 40px; font-size: 1.1rem; font-weight: bold; border-radius: 30px; cursor: pointer; width: 100%; margin-top: 20px; box-shadow: 0 4px 6px rgba(0, 122, 255, 0.2); transition: background 0.2s; }
         .btn-primary:hover { background-color: #0062cc; }
-
+ 
         .top3-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 15px; margin-top: 15px; }
         .rank-card { background: #fafbfc; border-radius: 10px; padding: 20px; border: 1px solid #e2e8f0; border-top: 5px solid #007aff; display: flex; flex-direction: column; justify-content: space-between; }
         .score-display { color: #e67e22; font-weight: bold; margin-bottom: 10px; }
-
+ 
         .add-wp-form { display: flex; gap: 10px; margin-top: 10px; }
         .btn-add { background-color: #334155; color: white; border: none; padding: 0 20px; border-radius: 8px; font-weight: bold; cursor: pointer; border-radius: 8px; }
-
+ 
         .day-section { margin-top: 30px; border-top: 2px dashed #cbd5e1; padding-top: 20px; background-color: #f8fafc; padding: 20px; border-radius: 8px; }
         .timeline-item { display: flex; gap: 20px; margin-bottom: 15px; position: relative; }
         .tl-time { width: 60px; font-weight: bold; font-size: 1.1rem; color: #1e293b; text-align: right; }
@@ -63,10 +71,10 @@
         .tl-card.info { background-color: #eff6ff; color: #1e40af; border-left: 4px solid #3b82f6; }
         .tl-card.warning { background-color: #fefce8; color: #713f12; border-left: 4px solid #eab308; }
         .tl-transit { background: #e0f2fe; color: #0369a1; padding: 10px 14px; border-radius: 8px; font-size: 0.9rem; margin: 8px 0 12px 80px; font-weight: bold; border-left: 3px solid #0284c7; }
-
+ 
         .btn-day-map { background-color: #22c55e; color: white; text-align: center; text-decoration: none; display: block; padding: 12px; border-radius: 6px; font-weight: bold; font-size: 0.95rem; box-shadow: 0 2px 4px rgba(34,197,94,0.15); margin-top: 15px; transition: background 0.2s; }
         .btn-day-map:hover { background-color: #16a34a; }
-
+ 
         .performance-box { display: flex; gap: 20px; margin-top: 15px; flex-wrap: wrap; }
         .perf-card { flex: 1; min-width: 200px; background: #fdfefe; border: 2px solid #e2e8f0; border-radius: 10px; padding: 15px; text-align: center; }
         .perf-card.cost-style { border-color: #f59e0b; background-color: #fffbeb; }
@@ -74,19 +82,58 @@
         .perf-num { font-size: 1.6rem; font-weight: 900; margin: 5px 0; }
         .cost-style .perf-num { color: #d97706; }
         .time-style .perf-num { color: #0891b2; }
-
+ 
         .btn-fav { background-color: #f59e0b; color: white; border: none; padding: 8px 18px; border-radius: 20px; font-weight: bold; cursor: pointer; }
         .peak-tag { color: #d97706; font-weight: bold; }
+ 
+        /* 制約充足バッジ・カード内バッジ（式3〜5、AI提案マーク等） */
+        .badge { display: inline-block; padding: 3px 9px; border-radius: 10px; font-size: 0.78rem; font-weight: bold; margin-right: 4px; }
+        .badge-ok { background: #dcfce7; color: #166534; }
+        .badge-warn { background: #fee2e2; color: #b91c1c; }
+        .badge-peak { background: #fef3c7; color: #92400e; }
+        .badge-circuit { background: #e0e7ff; color: #3730a3; }
+        .badge-hours { background: #f1f5f9; color: #475569; }
+        .badge-ai { background: #dbeafe; color: #1d4ed8; }
+        .badge-custom { background: #ede9fe; color: #6d28d9; }
+ 
+        /* TOP3提案カードの内部要素・選択状態 */
+        .rank-card.selected { border-color: #007aff; box-shadow: 0 0 0 2px rgba(0,122,255,0.25); }
+        .rank-title { font-weight: bold; font-size: 1.05rem; margin-bottom: 6px; color: #1e293b; }
+        .rank-spotlist { margin: 10px 0; font-size: 0.92rem; }
+        .rank-meta { font-size: 0.85rem; color: #64748b; margin-top: 6px; }
+        .rank-pick-btn { margin-top: 14px; width: 100%; background: #007aff; color: white; border: none; padding: 10px; border-radius: 8px; font-weight: bold; cursor: pointer; }
+        .rank-pick-btn:hover { background: #0062cc; }
+ 
+        /* 経由地タグ（手動追加／AI自動提案の両方で共通） */
+        .waypoint-tag { display: inline-flex; align-items: center; gap: 6px; background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 20px; padding: 5px 10px 5px 12px; font-size: 0.88rem; }
+        .waypoint-tag.auto { background: #eff6ff; border-color: #bfdbfe; color: #1d4ed8; }
+        .btn-remove-wp, .btn-remove-auto-wp { border: none; background: transparent; color: #94a3b8; cursor: pointer; font-size: 0.9rem; line-height: 1; padding: 0; }
+        .btn-remove-wp:hover, .btn-remove-auto-wp:hover { color: #ef4444; }
+ 
+        /* タイムラインの見出し・カード内部 */
+        .day-section-header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 12px; flex-wrap: wrap; gap: 6px; }
+        .day-section-title { font-weight: bold; font-size: 1.05rem; color: #1e293b; }
+        .day-section-sub { font-size: 0.85rem; color: #64748b; }
+        .tl-card-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
+        .tl-card-name { font-weight: bold; }
+        .tl-card-sub { margin-top: 4px; font-size: 0.85rem; color: #64748b; }
+ 
+        /* 制約充足状況カードの見出し・補足説明 */
+        .perf-title { font-size: 0.9rem; font-weight: bold; color: #475569; margin-bottom: 4px; }
+        .perf-formula { font-size: 0.75rem; color: #94a3b8; margin-top: 4px; }
+ 
+        /* 制約に収めるため自動的に間引かれた経由地の通知 */
+        .dropped-notice { background: #fff7ed; border: 1px solid #fdba74; color: #9a3412; border-radius: 8px; padding: 10px 14px; font-size: 0.88rem; margin-top: 12px; }
     </style>
 </head>
 <body>
-
+ 
 <div class="container">
     <header>
-        <h1>AI旅プロデュースナビゲーター</h1>
-        <p class="subtitle">パーソナライズド・多目的制約充足アルゴリズム統合版</p>
+        <h1>タビッグ</h1>
+        <p class="subtitle">旅行先を一発で決める</p>
     </header>
-
+ 
     <!-- 1. 基本条件 -->
     <div class="card">
         <div class="section-title">1. 旅の基本条件・資源制約を設定</div>
@@ -102,7 +149,14 @@
                 <input type="text" id="target-area" class="input-text" value="箱根温泉" placeholder="例：金沢、熱海、由布院など">
             </div>
         </div>
-
+ 
+        <div class="flex-inputs">
+            <div>
+                <label style="font-weight:bold; display:block; margin-bottom:5px;">🏁 到着地点（出発地と異なる場合のみ・任意）</label>
+                <input type="text" id="end-location-place" class="input-text" placeholder="例：新宿駅（未入力なら出発地に戻る／片道は最後の訪問地）">
+            </div>
+        </div>
+ 
         <div class="flex-inputs">
             <div>
                 <label style="font-weight:bold; display:block; margin-bottom:5px;">⏰ 出発時刻</label>
@@ -117,7 +171,7 @@
                 <input type="number" id="member-count" class="select-input" min="1" value="2">
             </div>
         </div>
-
+ 
         <div class="flex-inputs">
             <div>
                 <label style="font-weight:bold; display:block; margin-bottom:5px;">👨‍👩‍👧 世代グループ</label>
@@ -151,20 +205,21 @@
                     <option value="round_trip" selected>日帰り・往復 (出発地に戻る)</option>
                     <option value="one_way">片道・行ったっきり</option>
                 </select>
+                <span style="font-size:0.8rem; color:#64748b; display:block; margin-top:4px;">※ 到着地点を入力した場合、行程タイプに関わらずそこが終着点になります</span>
             </div>
         </div>
-
+ 
         <div class="slider-box">
             <label style="font-weight:bold; display:block; margin-bottom:5px;">⏱️ 時間資源制約の上限 : <span id="duration-value">480</span> 分 (<span id="duration-hours">8</span>時間)</label>
             <input type="range" id="duration-slider" class="slider" min="120" max="1440" step="60" value="480">
         </div>
-
+ 
         <div class="slider-box">
             <label style="font-weight:bold; display:block; margin-bottom:5px;">💰 費用資源制約の上限 : <span id="budget-value">50,000</span> 円</label>
             <input type="range" id="budget-slider" class="slider" min="5000" max="200000" step="5000" value="50000">
         </div>
     </div>
-
+ 
     <!-- 2. ピーク位置 -->
     <div class="card">
         <div class="section-title">2. 旅の「見どころ・ピーク」設定（行程最適化）</div>
@@ -174,7 +229,7 @@
             <label class="radio-label"><input type="radio" name="plan-peak" value="後半"> 🌆 後半ピーク</label>
         </div>
     </div>
-
+ 
     <!-- 3. テキスト意図 -->
     <div class="card">
         <div class="section-title">3. 旅の気分・動機（自然言語解析）</div>
@@ -182,7 +237,7 @@
         <label style="font-weight:bold; display:block; margin-top:10px; margin-bottom:5px;">🗣️ 参考口コミ・自作感想文 (任意):</label>
         <textarea id="custom-reviews-text" class="textarea-input" rows="2" placeholder="例：彫刻の森美術館の景色がきれいだった。"></textarea>
     </div>
-
+ 
     <!-- 4. 10項目こだわり -->
     <div class="card">
         <div class="section-title">4. こだわり・スタンス（10項目パラメータ設定）</div>
@@ -198,25 +253,32 @@
             <tr><td>その時期ならではのことをしたい（旬の特長）</td><td><select class="detailed-vec select-weight" data-key="seasonal"><option value="1.0" selected>1: 重視する</option><option value="0.5">0.5: 軽視する</option><option value="0.0">0: 考慮しない</option><option value="-1.0">-1: 避けたい</option></select></td></tr>
             <tr><td>アニメ・ドラマ・歴史上の聖地へ行きたい</td><td><select class="detailed-vec select-weight" data-key="pilgrimage"><option value="1.0">1: 重視する</option><option value="0.5">0.5: 軽視する</option><option value="0.0" selected>0: 考慮しない</option><option value="-1.0">-1: 避けたい</option></select></td></tr>
         </table>
-
+ 
         <input type="hidden" id="pref-gourmet" value="2">
         <input type="hidden" id="pref-sightseeing" value="2">
         <input type="hidden" id="pref-healing" value="3">
-
+ 
         <button type="button" id="btn-diagnose" class="btn-primary">制約充足＆パーソナライズド診断を実行 ➔</button>
     </div>
-
+ 
     <!-- 5. 診断結果 TOP3 -->
     <div class="card" id="top3-section" style="display:none;">
         <div class="section-title">5. 多目的制約充足による最適目的地 TOP3</div>
         <div class="top3-grid" id="top3-grid"></div>
     </div>
-
+ 
     <!-- 6. 寄り道・しおり生成（💡 経由地追加フォームを6内へ移動挿入） -->
     <div class="card" id="custom-section" style="display:none;">
         <div class="section-title">6. 効率的寄り道設計 ➔ 旅行しおりの自動生成</div>
         <h3 id="route-subtitle" style="color:#475569; font-size:1.05rem; margin-bottom:15px;"></h3>
-
+ 
+        <!-- 🤖 AIが自動提案した経由地（TOP3のうち選ばなかった残り。しおりは最初からこれらを
+             含めて自動生成される。不要なものは✕で外せる） -->
+        <div style="border-top: 1px solid #e2e8f0; padding-top:15px; margin-bottom:20px;">
+            <label style="font-weight:bold; display:block; margin-bottom:5px;">🤖 AIが自動提案した経由地（不要なら✕で外せます）:</label>
+            <div id="auto-waypoints-list" style="display:flex; flex-wrap:wrap; gap:8px; margin-top:10px;"></div>
+        </div>
+ 
         <!-- 💡 経由地（寄り道スポット）入力フォームを挿入 -->
         <div style="border-top: 1px solid #e2e8f0; padding-top:15px; margin-bottom:20px;">
             <label style="font-weight:bold; display:block; margin-bottom:5px;">💡 自由な経由地・寄り道スポットの追加:</label>
@@ -226,31 +288,33 @@
             </div>
             <div id="waypoints-tag-container" style="display:flex; flex-wrap:wrap; gap:8px; margin-top:10px;"></div>
         </div>
-
+ 
         <button type="button" id="btn-build" class="btn-primary">選択したスポットで実行可能な旅程を作成 ➔</button>
-
+ 
         <div id="output-section" style="display:none; margin-top:30px;">
             <div style="display:flex; justify-content:space-between; align-items:center;">
                 <div class="section-title" style="margin:0;">完成旅程しおり</div>
                 <button type="button" id="btn-favorite" class="btn-fav">⭐ お気に入りに保存</button>
             </div>
-            
+ 
             <div class="performance-box" id="metrics-area" style="margin-top:15px;"></div>
-            
+            <!-- 制約に収めるため自動的に間引かれた経由地があれば、ここに理由付きで表示する -->
+            <div id="dropped-notice" class="dropped-notice" style="display:none;"></div>
+ 
             <div style="border-top: 2px dashed #cbd5e1; margin-top:30px; padding-top:20px;">
                 <div class="section-title">🕒 スケジュールタイムライン</div>
                 <div id="timeline-area"></div>
             </div>
         </div>
     </div>
-
+ 
     <!-- お気に入り一覧 -->
     <div class="card">
         <div class="section-title">⭐ 保存したお気に入り旅程一覧</div>
         <div id="favorites-list"></div>
     </div>
 </div>
-
-<script src="app.js"></script>
+ 
+<script src="app.js?v=20260909b"></script>
 </body>
 </html>

@@ -187,18 +187,23 @@ async def _fetch_from_overpass(query: str) -> List[Dict[str, Any]]:
     return []
  
  
-MIN_ACCEPTABLE_RESULTS = 3  # OSMの結果がこの件数未満の場合のみ、有償/要キーAPIで補う
+MIN_ACCEPTABLE_RESULTS = 3  # 合計件数がこの件数未満の場合のみ、さらに有償/要キーAPIで補う
  
  
 async def fetch_places_dynamically(target_area: str) -> List[Dict[str, Any]]:
     """
     実在スポットを動的取得する。「無料枠をなるべく制限なく使いたい」という方針に合わせ、
     APIキー登録が不要で完全無料のOpenStreetMap Overpass APIを第一候補にしている。
-    優先順位:
-      1. OpenStreetMap Overpass API（キー不要・無料。MIN_ACCEPTABLE_RESULTS件以上取れれば採用）
-      2. TripAdvisor Content API（TRIPADVISOR_API_KEY設定時。OSMの結果が少ない時だけ補完で使用）
-      3. Google Places Text Search（GOOGLE_MAPS_API_KEY設定時。同上）
-      4. 上記すべて失敗/件数不足の場合、OSMの結果があればそれを返す。1件も無ければフォールバックデータ
+    特定の1ソースだけに候補地が偏らないよう複数の実データソースを積極的にマージする。
+    優先順位・マージ方針:
+      1. OpenStreetMap Overpass API（キー不要・無料。常に取得のベースとして使用）
+      2. TripAdvisor Content API（TRIPADVISOR_API_KEY設定時。OSMの件数に関わらず常時マージする。
+         「じゃらん等の単一ソースに絞らず、TripAdvisorからも取得したい」という要望に対応）
+      3. Google Places Text Search（GOOGLE_MAPS_API_KEY設定時。1・2の合計がMIN_ACCEPTABLE_RESULTS
+         未満の場合のみ追加補完として使用）
+      4. 上記すべて失敗/件数不足の場合、実データがあればそれを返す。1件も無ければフォールバックデータ
+ 
+    じゃらん（リクルート）APIは事業者登録・APIキー取得が別途必要なため、本関数には未接続。
  
     OSM検索は以前 area["name"~target_area] で行政区画名との文字列一致に頼っていたが、
     「箱根温泉」のようにOSM上の正式名称と一致しない入力だと検索が常に空振りし、
@@ -262,19 +267,27 @@ async def fetch_places_dynamically(target_area: str) -> List[Dict[str, Any]]:
                 "close_hour": close_hour
             })
  
-    if len(osm_results) >= MIN_ACCEPTABLE_RESULTS:
-        return osm_results[:MAX_POI_RESULTS]
- 
-    # OSM単独では件数が心もとない場合のみ、要キー/有償APIで補う（未設定なら何もせずスキップ）
+    # TripAdvisorは「OSMの件数が足りない時だけ」ではなく、キーが設定されていれば常時マージする。
+    # 単一ソース（OSMのみ／特定APIのみ）に候補地が偏らないよう、複数の実データソースを
+    # 積極的に混ぜて多様性を高める方針（ユーザー指定）。
+    combined = osm_results
     if TRIPADVISOR_API_KEY:
         tripadvisor_results = await _fetch_from_tripadvisor(target_area)
         if tripadvisor_results:
-            return _merge_unique(osm_results, tripadvisor_results)[:MAX_POI_RESULTS]
+            combined = _merge_unique(combined, tripadvisor_results)
  
+    if len(combined) >= MIN_ACCEPTABLE_RESULTS:
+        return combined[:MAX_POI_RESULTS]
+ 
+    # ここまでの実データ（OSM＋TripAdvisor）でも件数が心もとない場合のみ、
+    # 追加でGoogle Placesを補完に使う（未設定なら何もせずスキップ）
     if GOOGLE_MAPS_API_KEY:
         google_results = await _fetch_from_google_places(target_area)
         if google_results:
-            return _merge_unique(osm_results, google_results)[:MAX_POI_RESULTS]
+            combined = _merge_unique(combined, google_results)
+ 
+    if len(combined) >= MIN_ACCEPTABLE_RESULTS:
+        return combined[:MAX_POI_RESULTS]
  
     # フォールバック用データセット（テンプレ名だが、実データが少ないエリアでも
     # TOP3が同一スポットの重複表示にならないよう、実データに不足分だけ補完する）
@@ -287,9 +300,9 @@ async def fetch_places_dynamically(target_area: str) -> List[Dict[str, Any]]:
     for place in fallback:
         place["open_hour"], place["close_hour"] = _default_hours(place["types"])
  
-    if osm_results:
+    if combined:
         # 実データが1〜2件でもゼロにはせず、不足分だけテンプレ候補で補って多様性を確保する
-        return _merge_unique(osm_results, fallback)[:MAX_POI_RESULTS]
+        return _merge_unique(combined, fallback)[:MAX_POI_RESULTS]
  
     return fallback
  
