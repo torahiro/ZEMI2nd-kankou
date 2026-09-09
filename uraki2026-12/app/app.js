@@ -147,8 +147,31 @@ function renderDroppedNotice(names) {
     el.innerHTML = `⚠️ 予算・時間・営業時間の制約に収めるため、以下の経由地は今回の旅程から自動的に除外されました：${names.map(escapeHtml).join('、')}`;
 }
  
+// 出発地点・対象エリアは、以前「東京駅」「箱根温泉」を初期値としてフォームに入れていたが、
+// 入力し忘れてもそのまま無言でその場所として診断・旅程生成されてしまい、ユーザーの意図と
+// 無関係な（自分では選んでいない）場所が使われる原因になっていた。フォーム側の初期値は
+// 空にした上で、ここで未入力を検出してエラーにする（無意味な既定値に静かにフォールバック
+// させない）。
+function validateRequiredLocationFields() {
+    const startLoc = document.getElementById('start-location')?.value?.trim();
+    if (!startLoc) {
+        alert('出発地点を入力してください。');
+        document.getElementById('start-location')?.focus();
+        return false;
+    }
+    const area = document.getElementById('target-area')?.value?.trim();
+    if (!area) {
+        alert('対象エリア（旅行先）を入力してください。');
+        document.getElementById('target-area')?.focus();
+        return false;
+    }
+    return true;
+}
+ 
 /* --- 5. 診断実行 (TOP3表示) --- */
 async function runDiagnosis() {
+    if (!validateRequiredLocationFields()) return;
+ 
     const btnDiagnose = document.getElementById('btn-diagnose');
     const loading = document.getElementById('diagnose-loading');
     const failBanner = document.getElementById('ai-fail-banner');
@@ -169,7 +192,7 @@ async function runDiagnosis() {
         // preferences_4step は廃止（旧固定値のダミー送信をやめ、10項目こだわり入力(detailed_vector)から
         // サーバー側で式(1)のψ(b)を構築するようにした）
         detailed_vector: detailedVector,
-        target_area: document.getElementById('target-area')?.value || '箱根温泉',
+        target_area: document.getElementById('target-area')?.value?.trim() || '',
         season: document.getElementById('season-select')?.value || 'winter',
         generation_group: document.getElementById('generation-group')?.value || 'couple',
         custom_reviews_text: document.getElementById('custom-reviews-text')?.value || '',
@@ -177,7 +200,7 @@ async function runDiagnosis() {
         // 段階でしか使っていなかったため、選んだ候補が実は予算・時間・営業時間に収まらない、
         // ということが旅程生成まで分からなかった。診断（TOP3提案）の時点から渡すことで、
         // 制約内に収まる候補を優先して提案してもらう。
-        start_location: document.getElementById('start-location')?.value || '東京駅',
+        start_location: document.getElementById('start-location')?.value?.trim() || '',
         end_location: document.getElementById('end-location-place')?.value?.trim() || '',
         start_time: document.getElementById('start-time')?.value || '09:00',
         transport_mode: document.getElementById('transport-mode')?.value || 'transit',
@@ -194,13 +217,24 @@ async function runDiagnosis() {
             body: JSON.stringify(payload)
         });
  
-        if (!res.ok) throw new Error("API通信エラー");
+        if (!res.ok) {
+            // バックエンドがHTTPException(400等)で理由付きエラーを返してきた場合は、
+            // 「エラーが発生しました」という中身のないメッセージで終わらせず、
+            // その理由（例：対象エリア未入力）をそのまま利用者に伝える。
+            let detail = "API通信エラー";
+            try {
+                const errBody = await res.json();
+                if (errBody?.detail) detail = errBody.detail;
+            } catch (_) { /* JSONでなければ既定メッセージのまま */ }
+            throw new Error(detail);
+        }
  
         const data = await res.json();
         currentCandidates = data.top3_places || [];
         renderTop3(currentCandidates, payload.target_area);
     } catch (err) {
         console.error(err);
+        alert(err?.message || "目的地の提案取得中にエラーが発生しました。");
         if (failBanner) failBanner.style.display = 'block';
     } finally {
         if (btnDiagnose) btnDiagnose.disabled = false;
@@ -289,8 +323,8 @@ function selectRoute(idx) {
     }
  
     const themes = ["王道定番コース", "グルメ・癒し満喫コース", "穴場・のんびりコース"];
-    const area = document.getElementById('target-area')?.value || '箱根温泉';
-    const startLoc = document.getElementById('start-location')?.value || '東京駅';
+    const area = document.getElementById('target-area')?.value?.trim() || '';
+    const startLoc = document.getElementById('start-location')?.value?.trim() || '';
     const startTime = document.getElementById('start-time')?.value || '09:00';
     const chosenPlace = currentCandidates[idx];
  
@@ -309,6 +343,8 @@ function selectRoute(idx) {
  
 /* --- 6. 旅程しおり生成 --- */
 async function generateFinalItinerary() {
+    if (!validateRequiredLocationFields()) return;
+ 
     const btnBuild = document.getElementById('btn-build');
     if (btnBuild) {
         btnBuild.disabled = true;
@@ -331,7 +367,7 @@ async function generateFinalItinerary() {
         // 明示する。selected_placesにはAI自動提案の経由地も混ざっているため必須。
         main_peak_place_id: mainPeak?.id || "",
         custom_waypoints: customWaypointsList,
-        start_location: document.getElementById('start-location')?.value || '東京駅',
+        start_location: document.getElementById('start-location')?.value?.trim() || '',
         // 出発地と異なる到着地点（任意）。未入力なら空文字のままバックエンド側で
         // 従来通り trip_type（往復／片道）に基づいて終着点を決める。
         end_location: document.getElementById('end-location-place')?.value?.trim() || "",
@@ -348,7 +384,7 @@ async function generateFinalItinerary() {
         detailed_vector: lastDetailedVector,
         // 経由地（自由入力テキスト）のジオコーディング精度向上のためのヒント（診断時のエリア指定と同じ）。
         // 例:「ミラノ亭」のような曖昧な店名が全国の同名店と混同されるのを防ぐために使う。
-        target_area: document.getElementById('target-area')?.value || '箱根温泉'
+        target_area: document.getElementById('target-area')?.value?.trim() || ''
     };
  
     try {
@@ -358,7 +394,14 @@ async function generateFinalItinerary() {
             body: JSON.stringify(payload)
         });
  
-        if (!res.ok) throw new Error("しおり生成API通信エラー");
+        if (!res.ok) {
+            let detail = "しおり生成API通信エラー";
+            try {
+                const errBody = await res.json();
+                if (errBody?.detail) detail = errBody.detail;
+            } catch (_) { /* JSONでなければ既定メッセージのまま */ }
+            throw new Error(detail);
+        }
  
         const data = await res.json();
         lastGeneratedItineraryData = data;
@@ -367,16 +410,20 @@ async function generateFinalItinerary() {
         // 予算・時間・営業時間に収めるため自動的に外された経由地があれば通知する
         renderDroppedNotice(data.dropped_names);
  
-        // 各セクションの表示解放
-        document.getElementById('output-section').style.display = 'block';
-        document.getElementById('replan-section').style.display = 'block';
-        document.getElementById('review-section').style.display = 'block';
+        // 各セクションの表示解放（HTML側に該当セクションが無い場合でも
+        // 「Cannot read properties of null」で処理全体が落ちないようnullガードする）
+        const outputSection = document.getElementById('output-section');
+        const replanSection = document.getElementById('replan-section');
+        const reviewSection = document.getElementById('review-section');
+        if (outputSection) outputSection.style.display = 'block';
+        if (replanSection) replanSection.style.display = 'block';
+        if (reviewSection) reviewSection.style.display = 'block';
  
-        document.getElementById('output-section').scrollIntoView({ behavior: 'smooth' });
+        if (outputSection) outputSection.scrollIntoView({ behavior: 'smooth' });
  
     } catch (err) {
         console.error(err);
-        alert("旅程の自動生成中にエラーが発生しました。");
+        alert(err?.message || "旅程の自動生成中にエラーが発生しました。");
     } finally {
         if (btnBuild) {
             btnBuild.disabled = false;
@@ -565,7 +612,7 @@ function initStarRating() {
 function saveToFavorites() {
     if (!lastGeneratedItineraryData) return;
     const favs = JSON.parse(localStorage.getItem('my_favorite_itineraries') || '[]');
-    const area = document.getElementById('target-area')?.value || '箱根温泉';
+    const area = document.getElementById('target-area')?.value?.trim() || lastGeneratedItineraryData.final_destination || '旅程';
     const startTime = document.getElementById('start-time')?.value || '09:00';
     const title = `${area} 旅程 (${startTime}発)`;
  

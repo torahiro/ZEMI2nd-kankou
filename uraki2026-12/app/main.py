@@ -1,5 +1,5 @@
 # main.py
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
@@ -40,7 +40,7 @@ SEASON_CATEGORY_BOOST: Dict[str, List[float]] = {
 # 古いコードのまま……という見落としが繰り返し発生したため、目視で確認できる目印を用意する。
 # ファイルを更新するたびにこの文字列を変え、起動ログと /version エンドポイントで
 # 「今動いているのは本当に最新版か」をすぐ確認できるようにする。
-APP_CODE_VERSION = "2026-09-09-auto-waypoint-dropping-1"
+APP_CODE_VERSION = "2026-09-09-no-default-location-1"
 print(f"[main.py] loaded. APP_CODE_VERSION = {APP_CODE_VERSION}")
  
 app = FastAPI(title="Tourism Itinerary Generator API")
@@ -149,7 +149,14 @@ def _select_diverse_top3(scored_places: List[Dict[str, Any]]) -> List[Dict[str, 
  
 @app.post("/diagnose_top3")
 async def diagnose_top3(req: DiagnoseRequest):
-    area = req.target_area.strip() if req.target_area.strip() else "箱根温泉"
+    # 以前は対象エリア未入力時に「箱根温泉」を無言で補完していたが、ユーザーが
+    # 意図せずデフォルト値のまま提案を実行してしまい、後段の旅程生成で
+    # （実際には指定していないはずの）箱根エリアの結果が出てくる混乱の原因になっていた。
+    # フロント側でも必須入力チェックを行うが、API単体で叩かれた場合の保険として
+    # ここでも明示的にエラーを返す。
+    area = req.target_area.strip()
+    if not area:
+        raise HTTPException(status_code=400, detail="対象エリア（旅行先）を入力してください。")
     raw_places = await fetch_places_dynamically(area)
  
     # 式(1): u = α・φ(t) + (1-α)・ψ(b)
@@ -259,6 +266,10 @@ async def diagnose_top3(req: DiagnoseRequest):
  
 @app.post("/build_itinerary")
 async def build_itinerary(req: GenerateItineraryRequest):
+    # start_locationはPydantic上は必須(str)だが、空文字("")は型検証を通ってしまうため、
+    # ここで明示的に弾く（デフォルト値を無言で使っていた過去の挙動を廃止）。
+    if not req.start_location or not req.start_location.strip():
+        raise HTTPException(status_code=400, detail="出発地点を入力してください。")
     selected_nodes = [p for p in req.candidate_places if p["id"] in req.selected_place_ids]
     if not selected_nodes:
         selected_nodes = req.candidate_places[:1]
@@ -470,4 +481,3 @@ async def build_itinerary(req: GenerateItineraryRequest):
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
-
