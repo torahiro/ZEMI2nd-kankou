@@ -124,6 +124,13 @@
  
         /* 制約に収めるため自動的に間引かれた経由地の通知 */
         .dropped-notice { background: #fff7ed; border: 1px solid #fdba74; color: #9a3412; border-radius: 8px; padding: 10px 14px; font-size: 0.88rem; margin-top: 12px; }
+ 
+        /* 動的リプランニング機能 */
+        #replan-diff .kept { color: #166534; font-weight: bold; }
+ 
+        /* 口コミ評価（星） */
+        #star-rating span { color: #cbd5e1; transition: color 0.15s; }
+        #star-rating span.active { color: #f59e0b; }
     </style>
 </head>
 <body>
@@ -141,12 +148,12 @@
             <div>
                 <label style="font-weight:bold; display:block; margin-bottom:5px;">🛫 出発地</label>
                 <div class="location-box">
-                    <input type="text" id="start-location" class="input-text" value="東京駅">
+                    <input type="text" id="start-location" class="input-text" placeholder="例：東京駅、新宿駅など" required>
                 </div>
             </div>
             <div>
                 <label style="font-weight:bold; display:block; margin-bottom:5px;">📍 目的地エリア</label>
-                <input type="text" id="target-area" class="input-text" value="箱根温泉" placeholder="例：金沢、熱海、由布院など">
+                <input type="text" id="target-area" class="input-text" placeholder="例：金沢、熱海、由布院など" required>
             </div>
         </div>
  
@@ -308,6 +315,40 @@
         </div>
     </div>
  
+    <!-- 7. 動的リプランニング（現在地・時刻をもとに旅程の続きを提案し直す） -->
+    <div class="card" id="replan-section" style="display:none;">
+        <div class="section-title">🔄 旅程中の予定変更（動的リプランニング）</div>
+        <label style="display:flex; align-items:center; gap:8px; font-weight:bold; cursor:pointer;">
+            <input type="checkbox" id="replan-toggle">
+            旅程の途中で予定を変更したい
+        </label>
+        <div id="replan-body" style="display:none; margin-top:15px;">
+            <div class="flex-inputs">
+                <div>
+                    <label style="font-weight:bold; display:block; margin-bottom:5px;">📍 現在地</label>
+                    <input type="text" id="replan-location" class="input-text" placeholder="例：草津の名物グルメ通り">
+                </div>
+                <div>
+                    <label style="font-weight:bold; display:block; margin-bottom:5px;">🕒 現在時刻</label>
+                    <input type="time" id="replan-time" class="input-text">
+                </div>
+            </div>
+            <button type="button" id="btn-replan" class="btn-primary" style="margin-top:10px;">この状況で旅程を見直す ➔</button>
+            <div id="replan-output" style="display:none; margin-top:15px;">
+                <div id="replan-diff"></div>
+            </div>
+        </div>
+    </div>
+ 
+    <!-- 8. 口コミ評価 -->
+    <div class="card" id="review-section" style="display:none;">
+        <div class="section-title">📝 この旅程プランを評価する</div>
+        <div id="star-rating" style="font-size:1.6rem; cursor:pointer; letter-spacing:4px;">
+            <span data-v="1">☆</span><span data-v="2">☆</span><span data-v="3">☆</span><span data-v="4">☆</span><span data-v="5">☆</span>
+        </div>
+        <button type="button" id="btn-submit-review" class="btn-primary" style="margin-top:15px; max-width:220px;">評価を送信</button>
+    </div>
+ 
     <!-- お気に入り一覧 -->
     <div class="card">
         <div class="section-title">⭐ 保存したお気に入り旅程一覧</div>
@@ -315,6 +356,6 @@
     </div>
 </div>
  
-<script src="app.js?v=20260909b"></script>
+<script src="app.js?v=20260909d"></script>
 </body>
 </html>
