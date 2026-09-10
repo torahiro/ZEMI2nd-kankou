@@ -1,5 +1,8 @@
 # main.py
 import os
+import json
+import asyncio
+from datetime import datetime, timezone
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
@@ -42,7 +45,7 @@ SEASON_CATEGORY_BOOST: Dict[str, List[float]] = {
 # 古いコードのまま……という見落としが繰り返し発生したため、目視で確認できる目印を用意する。
 # ファイルを更新するたびにこの文字列を変え、起動ログと /version エンドポイントで
 # 「今動いているのは本当に最新版か」をすぐ確認できるようにする。
-APP_CODE_VERSION = "2026-09-10-osm-opening-hours-1"
+APP_CODE_VERSION = "2026-09-10-top3-score-order-fix-1"
 print(f"[main.py] loaded. APP_CODE_VERSION = {APP_CODE_VERSION}")
  
 app = FastAPI(title="Tourism Itinerary Generator API")
@@ -83,6 +86,92 @@ async def version():
     ここに表示される値がお送りしたファイルのAPP_CODE_VERSIONと一致していなければ、
     ファイルの差し替えが反映されていない（サーバーの再起動が必要）ことが分かる。"""
     return {"version": APP_CODE_VERSION}
+ 
+ 
+# ------------------------------------------------------------------
+# 口コミ・評価の収集（★評価＋自由記述の口コミを、今後のデータ活用のために永続化する）。
+#
+# これまで#review-sectionの「評価を送信」ボタンはalert()を出すだけで、実際には
+# どこにも保存していなかった（送信したつもりが何も記録されていなかった）。
+# 本アプリはまだ本格的なデータベースを持たないため、まずは最小構成として
+# JSON Lines形式のファイルに1件1行で追記する方式にした。Renderの無料プランは
+# ディスクが揮発性（再起動・再デプロイでリセットされる）なので、本格的に
+# 「今後のデータ」として蓄積・分析していくフェーズになったら、Render上の
+# 無料PostgresやSQLiteなど永続ディスクを使うDBへ移行することを推奨する。
+# ------------------------------------------------------------------
+REVIEWS_FILE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "reviews.jsonl")
+_reviews_file_lock = asyncio.Lock()
+ 
+ 
+class ReviewSubmission(BaseModel):
+    rating: int                              # 1〜5の★評価（必須）
+    review_text: Optional[str] = ""          # 自由記述の口コミ（任意）
+    final_destination: Optional[str] = ""
+    start_location: Optional[str] = ""
+    transport_mode: Optional[str] = ""
+    trip_type: Optional[str] = ""
+    member_count: Optional[int] = None
+    total_cost: Optional[float] = None
+    total_time_minutes: Optional[float] = None
+ 
+ 
+@app.post("/submit_review")
+async def submit_review(review: ReviewSubmission):
+    if review.rating < 1 or review.rating > 5:
+        raise HTTPException(status_code=400, detail="評価は1〜5の範囲で指定してください。")
+ 
+    record = {
+        "submitted_at": datetime.now(timezone.utc).isoformat(),
+        "rating": review.rating,
+        "review_text": (review.review_text or "").strip(),
+        "final_destination": review.final_destination or "",
+        "start_location": review.start_location or "",
+        "transport_mode": review.transport_mode or "",
+        "trip_type": review.trip_type or "",
+        "member_count": review.member_count,
+        "total_cost": review.total_cost,
+        "total_time_minutes": review.total_time_minutes,
+    }
+ 
+    try:
+        # 複数リクエストが同時に来てファイル書き込みが競合し、行が壊れるのを防ぐためロックする。
+        async with _reviews_file_lock:
+            with open(REVIEWS_FILE_PATH, "a", encoding="utf-8") as f:
+                f.write(json.dumps(record, ensure_ascii=False) + "\n")
+    except Exception as e:
+        print(f"[submit_review] 保存に失敗しました: {e}")
+        raise HTTPException(status_code=500, detail="評価の保存中にエラーが発生しました。")
+ 
+    return {"status": "ok"}
+ 
+ 
+@app.get("/reviews_summary")
+async def reviews_summary():
+    """蓄積された口コミ・評価の簡易集計。今後のデータ活用の第一歩として、
+    件数と平均評価だけをまず確認できるようにしている。"""
+    if not os.path.exists(REVIEWS_FILE_PATH):
+        return {"count": 0, "average_rating": None}
+ 
+    count = 0
+    total = 0
+    async with _reviews_file_lock:
+        with open(REVIEWS_FILE_PATH, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    rec = json.loads(line)
+                    total += rec.get("rating", 0)
+                    count += 1
+                except json.JSONDecodeError:
+                    continue
+ 
+    return {
+        "count": count,
+        "average_rating": round(total / count, 2) if count > 0 else None,
+    }
+ 
  
 class DiagnoseRequest(BaseModel):
     user_text: str
@@ -265,7 +354,12 @@ async def diagnose_top3(req: DiagnoseRequest):
             member_count=req.member_count or 1,
         )
         feasible = [p for p in scored_places if p.get("fits_constraints")]
-        infeasible = sorted(
+        # violation_scoreはあくまで「制約内に収まらない候補の中で、どれを残り枠に選ぶか」を
+        # 決めるための基準（違反が小さい＝惜しい候補を優先的に選ぶ）。選ばれた後の画面表示順
+        # （🥇🥈🥉）にそのまま使うと、violation_scoreの小さい順＝スコアの高い順とは限らないため、
+        # 「スコアが低い方が🥇として表示される」という不具合になっていた。選定基準と表示順は
+        # 別物として扱い、表示直前に必ずスコア降順へ揃える。
+        infeasible_by_violation = sorted(
             [p for p in scored_places if not p.get("fits_constraints")],
             key=lambda p: p.get("violation_score", 0)
         )
@@ -274,12 +368,18 @@ async def diagnose_top3(req: DiagnoseRequest):
             # 制約内に収まる候補が3件に満たない場合のみ、最も惜しい（違反が小さい）候補で
             # 残り枠を埋める。0件を返すより、違反理由を明示した上で見せる方が親切なため。
             used_names = {p["name"] for p in top3}
-            for p in infeasible:
-                if len(top3) >= 3:
+            needed = 3 - len(top3)
+            backfill = []
+            for p in infeasible_by_violation:
+                if len(backfill) >= needed:
                     break
                 if p["name"] not in used_names:
-                    top3.append(p)
+                    backfill.append(p)
                     used_names.add(p["name"])
+            # 選定基準（違反の小ささ）と表示順（スコアの高さ）は別物なので、
+            # 実際に画面へ足す直前にスコア降順へ並べ替える。
+            backfill.sort(key=lambda p: p["score"], reverse=True)
+            top3.extend(backfill)
     else:
         top3 = _select_diverse_top3(scored_places)
  
