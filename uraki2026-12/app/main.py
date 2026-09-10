@@ -1,6 +1,8 @@
 # main.py
+import os
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
  
@@ -40,7 +42,7 @@ SEASON_CATEGORY_BOOST: Dict[str, List[float]] = {
 # 古いコードのまま……という見落としが繰り返し発生したため、目視で確認できる目印を用意する。
 # ファイルを更新するたびにこの文字列を変え、起動ログと /version エンドポイントで
 # 「今動いているのは本当に最新版か」をすぐ確認できるようにする。
-APP_CODE_VERSION = "2026-09-09-no-default-location-1"
+APP_CODE_VERSION = "2026-09-10-osm-opening-hours-1"
 print(f"[main.py] loaded. APP_CODE_VERSION = {APP_CODE_VERSION}")
  
 app = FastAPI(title="Tourism Itinerary Generator API")
@@ -51,6 +53,28 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+ 
+ 
+# ------------------------------------------------------------------
+# フロントエンド（intoro.html / app.js / style.css）を同じサービスから配信する。
+# バックエンドAPIとフロントエンドを別々にデプロイすると、フロントエンドが
+# 「どのURLのAPIを呼べばいいか」を知る必要が出てCORSやURL管理が煩雑になるため、
+# この1つのFastAPIサービスだけで両方まとめて配信する構成にしている。
+# ------------------------------------------------------------------
+@app.get("/")
+async def root():
+    return FileResponse("intoro.html")
+ 
+ 
+@app.get("/app.js")
+async def serve_app_js():
+    return FileResponse("app.js", media_type="application/javascript")
+ 
+ 
+@app.get("/style.css")
+async def serve_style_css():
+    return FileResponse("style.css", media_type="text/css")
+ 
  
 @app.get("/version")
 async def version():
@@ -212,6 +236,9 @@ async def diagnose_top3(req: DiagnoseRequest):
             "t_base": t_base,
             "open_hour": raw.get("open_hour", DEFAULT_OPEN_HOUR),
             "close_hour": raw.get("close_hour", DEFAULT_CLOSE_HOUR),
+            # "osm"=OSMの実データ(opening_hoursタグ)に基づく／"default"=種別からの推定値。
+            # 営業時間が推定値かどうかをUI側で示せるようにするためのフラグ。
+            "hours_source": raw.get("hours_source", "default"),
             # OSM/TripAdvisor/Google Places側で既に分かっている実座標。旅程生成(build_itinerary)側で
             # 同名スポットの取り違えによる誤ジオコーディング（別の場所への移動時間になってしまう問題）
             # を避けるため、ここで得た実座標をそのまま最後まで引き継ぐ（seed_geocode_cache参照）。
@@ -287,6 +314,7 @@ async def build_itinerary(req: GenerateItineraryRequest):
                 "t_base": 45,
                 "open_hour": DEFAULT_OPEN_HOUR,
                 "close_hour": 20,
+                "hours_source": "default",  # 自由入力の経由地は営業時間の実データを持たない
                 "is_custom_waypoint": True
             })
  
@@ -299,6 +327,7 @@ async def build_itinerary(req: GenerateItineraryRequest):
             "t_base": node.get("t_base", TAU_TOUR_MINUTES),
             "open_hour": node.get("open_hour", DEFAULT_OPEN_HOUR),
             "close_hour": node.get("close_hour", DEFAULT_CLOSE_HOUR),
+            "hours_source": node.get("hours_source", "default"),
             "score": node.get("score"),
             "is_custom_waypoint": False
         })
@@ -415,7 +444,9 @@ async def build_itinerary(req: GenerateItineraryRequest):
                 "is_custom_waypoint": node["is_custom_waypoint"],
                 "weight": node["weight"],
                 "arrival_minutes": node["arrival_minutes"],
-                "hours_satisfied": node["hours_satisfied"]
+                "hours_satisfied": node["hours_satisfied"],
+                # 営業時間が実データ(OSM)由来か、種別からの推定値かをUI側で区別できるようにする。
+                "hours_source": target.get("hours_source", "default")
             })
  
     total_cost = sim["total_cost"]
@@ -480,4 +511,7 @@ async def build_itinerary(req: GenerateItineraryRequest):
  
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    # Renderなどのホスティング環境はリッスンすべきポート番号を環境変数PORTで渡してくる。
+    # ローカル実行時はPORT未設定なので、従来通り8000番を使う。
+    port = int(os.getenv("PORT", "8000"))
+    uvicorn.run(app, host="0.0.0.0", port=port)
