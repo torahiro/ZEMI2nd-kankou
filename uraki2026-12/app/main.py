@@ -1,13 +1,16 @@
 # main.py
 import os
-import json
+import secrets
 import asyncio
-from datetime import datetime, timezone
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse
+from starlette.middleware.sessions import SessionMiddleware
+from authlib.integrations.starlette_client import OAuth
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
+ 
+import db
  
 from dynamic_fetcher import fetch_places_dynamically, analyze_reviews_and_build_vector
 from optimizer import (
@@ -45,7 +48,7 @@ SEASON_CATEGORY_BOOST: Dict[str, List[float]] = {
 # 古いコードのまま……という見落としが繰り返し発生したため、目視で確認できる目印を用意する。
 # ファイルを更新するたびにこの文字列を変え、起動ログと /version エンドポイントで
 # 「今動いているのは本当に最新版か」をすぐ確認できるようにする。
-APP_CODE_VERSION = "2026-09-10-top3-score-order-fix-1"
+APP_CODE_VERSION = "2026-09-10-local-auth-1"
 print(f"[main.py] loaded. APP_CODE_VERSION = {APP_CODE_VERSION}")
  
 app = FastAPI(title="Tourism Itinerary Generator API")
@@ -57,16 +60,210 @@ app.add_middleware(
     allow_headers=["*"],
 )
  
+# ------------------------------------------------------------------
+# Googleログイン（OAuth 2.0 / OpenID Connect）
+#
+# ログインセッションはCookieに署名して保持する方式（Starlette標準のSessionMiddleware）。
+# この署名に使うSECRET_KEYが環境変数SESSION_SECRET_KEYとして固定値で設定されていないと、
+# サーバーが再起動するたびに鍵が変わり、ログイン中の利用者が全員ログアウト扱いになってしまう。
+# Renderにデプロイする際は必ずSESSION_SECRET_KEYを設定すること（render.yaml参照）。
+SESSION_SECRET_KEY = os.getenv("SESSION_SECRET_KEY", "")
+if not SESSION_SECRET_KEY:
+    SESSION_SECRET_KEY = secrets.token_urlsafe(32)
+    print("[main.py] 警告: 環境変数 SESSION_SECRET_KEY が未設定のため、起動のたびに変わる一時的な"
+          "鍵でセッションを署名しています。このままではサーバーを再起動するたびに全員が"
+          "ログアウトされます。本番運用ではSESSION_SECRET_KEYを固定の値で設定してください。")
+ 
+app.add_middleware(SessionMiddleware, secret_key=SESSION_SECRET_KEY, same_site="lax")
+ 
+# Google Cloud ConsoleでOAuthクライアントID/シークレットを発行し、環境変数に設定する。
+# 未設定の場合はアプリ自体は通常通り動作し、ログイン関連のエンドポイントだけが
+# 503（設定未完了）を返す（他の全機能はログイン無しでも従来通り使える設計を維持する）。
+GOOGLE_OAUTH_CLIENT_ID = os.getenv("GOOGLE_OAUTH_CLIENT_ID", "")
+GOOGLE_OAUTH_CLIENT_SECRET = os.getenv("GOOGLE_OAUTH_CLIENT_SECRET", "")
+ 
+oauth = OAuth()
+if GOOGLE_OAUTH_CLIENT_ID and GOOGLE_OAUTH_CLIENT_SECRET:
+    oauth.register(
+        name="google",
+        client_id=GOOGLE_OAUTH_CLIENT_ID,
+        client_secret=GOOGLE_OAUTH_CLIENT_SECRET,
+        server_metadata_url="https://accounts.google.com/.well-known/openid-configuration",
+        client_kwargs={"scope": "openid email profile"},
+    )
+else:
+    print("[main.py] 警告: GOOGLE_OAUTH_CLIENT_ID / GOOGLE_OAUTH_CLIENT_SECRET が未設定のため、"
+          "Googleログイン機能は無効です（/auth/login は503を返します）。")
+ 
+db.init_db()
+ 
+ 
+def _current_session_user(request: Request) -> Optional[Dict[str, Any]]:
+    return request.session.get("user")
+ 
+ 
+def _require_login(request: Request) -> Dict[str, Any]:
+    user = _current_session_user(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="ログインが必要です。")
+    return user
+ 
+ 
+@app.get("/auth/login")
+async def auth_login(request: Request):
+    # ページの入り口自体をログイン必須にしたため、ここで生のJSONエラーを返すと
+    # 利用者がアプリに一切たどり着けなくなる。必ずlogin.htmlへ戻し、設定不足である旨を
+    # その場で案内する（サーバー管理者がGOOGLE_OAUTH_CLIENT_ID/SECRETを設定すれば解消する）。
+    if not (GOOGLE_OAUTH_CLIENT_ID and GOOGLE_OAUTH_CLIENT_SECRET):
+        return RedirectResponse(url="/login.html?error=config")
+    # request.url_for("auth_callback") はリバースプロキシ経由だとhttp/httpsの判定を誤ることがある。
+    # RenderではUvicornを --proxy-headers 付きで起動し、X-Forwarded-Protoを信用させる必要がある
+    # （render.yamlのstartCommand参照）。ここがずれるとGoogle側で「redirect_uri_mismatch」になる。
+    redirect_uri = str(request.url_for("auth_callback"))
+    return await oauth.google.authorize_redirect(request, redirect_uri)
+ 
+ 
+@app.get("/auth/callback")
+async def auth_callback(request: Request):
+    # ページの入り口自体をログイン必須にしたため、ここで生のJSONエラーを返すと
+    # 利用者が完全に行き詰まってしまう。失敗時は必ずlogin.htmlへ戻し、
+    # そこでエラーメッセージを表示して再挑戦できるようにする。
+    if not (GOOGLE_OAUTH_CLIENT_ID and GOOGLE_OAUTH_CLIENT_SECRET):
+        return RedirectResponse(url="/login.html?error=config")
+    try:
+        token = await oauth.google.authorize_access_token(request)
+    except Exception as e:
+        print(f"[auth_callback] Googleとのトークン交換に失敗しました: {e}")
+        return RedirectResponse(url="/login.html?error=oauth")
+ 
+    userinfo = token.get("userinfo") or {}
+    google_sub = userinfo.get("sub")
+    if not google_sub:
+        return RedirectResponse(url="/login.html?error=oauth")
+ 
+    email = userinfo.get("email", "") or ""
+    name = userinfo.get("name", "") or ""
+    picture = userinfo.get("picture", "") or ""
+ 
+    # upsert_google_userは、セッションにそのまま保存できる共通形式（id/provider/email/name/picture）の
+    # 辞書を返す。id は "google:<google_sub>" という形式で、ユーザー名・パスワード認証の
+    # "local:<username>" と衝突しないようにしている（favorites/reviewsのuser_idもこのidで統一）。
+    user = await asyncio.to_thread(db.upsert_google_user, google_sub, email, name, picture)
+ 
+    request.session["user"] = user
+    return RedirectResponse(url="/")
+ 
+ 
+@app.get("/auth/logout")
+async def auth_logout(request: Request):
+    request.session.pop("user", None)
+    return RedirectResponse(url="/")
+ 
+ 
+@app.get("/auth/me")
+async def auth_me(request: Request):
+    user = _current_session_user(request)
+    return {"logged_in": bool(user), "user": user}
+ 
  
 # ------------------------------------------------------------------
-# フロントエンド（intoro.html / app.js / style.css）を同じサービスから配信する。
+# ユーザー名・パスワード認証（Googleログインの代替・簡易ルート）
+#
+# Googleログインは毎回Google Cloud ConsoleでのOAuthクライアント設定が必要になり、
+# ローカル開発やデプロイのたびの手間になっていた。外部サービスに依存しない
+# シンプルな自前認証（ユーザー参考のPHP実装と同様の考え方）を追加し、
+# Googleログインと同じセッション（request.session["user"]）にログインできるようにする。
+# パスワードはPython標準のhashlibのみでPBKDF2-HMAC-SHA256ハッシュ化して保存し、
+# 平文はDBは元よりログにも一切出力しない。
+# ------------------------------------------------------------------
+class LocalAuthRequest(BaseModel):
+    username: str
+    password: str
+ 
+ 
+@app.post("/auth/local/signup")
+async def local_signup(request: Request, body: LocalAuthRequest):
+    username = body.username.strip()
+    if len(username) < 3:
+        raise HTTPException(status_code=400, detail="ユーザー名は3文字以上で入力してください。")
+    if len(body.password) < 8:
+        raise HTTPException(status_code=400, detail="パスワードは8文字以上で入力してください。")
+ 
+    user = await asyncio.to_thread(db.create_local_user, username, body.password)
+    if user is None:
+        raise HTTPException(status_code=409, detail="そのユーザー名は既に使われています。別のユーザー名をお試しください。")
+ 
+    request.session["user"] = user
+    return {"status": "ok", "user": user}
+ 
+ 
+@app.post("/auth/local/login")
+async def local_login(request: Request, body: LocalAuthRequest):
+    user = await asyncio.to_thread(db.authenticate_local_user, body.username.strip(), body.password)
+    if user is None:
+        raise HTTPException(status_code=401, detail="ユーザー名またはパスワードが正しくありません。")
+ 
+    request.session["user"] = user
+    return {"status": "ok", "user": user}
+ 
+ 
+# ------------------------------------------------------------------
+# お気に入り（ログイン中のアカウントに紐付けて保存する）。
+# ログインしていない利用者は従来通りブラウザのlocalStorageのみで運用を続けられるため、
+# ここは401を返すだけで、フロントエンド側でlocalStorageにフォールバックする。
+# ------------------------------------------------------------------
+class FavoriteCreate(BaseModel):
+    title: str
+    data: Dict[str, Any]
+ 
+ 
+@app.get("/favorites")
+async def list_favorites(request: Request):
+    user = _require_login(request)
+    favorites = await asyncio.to_thread(db.list_favorites, user["id"])
+    return {"favorites": favorites}
+ 
+ 
+@app.post("/favorites")
+async def create_favorite(request: Request, favorite: FavoriteCreate):
+    user = _require_login(request)
+    favorite_id = await asyncio.to_thread(db.add_favorite, user["id"], favorite.title, favorite.data)
+    return {"status": "ok", "id": favorite_id}
+ 
+ 
+@app.delete("/favorites/{favorite_id}")
+async def remove_favorite(request: Request, favorite_id: int):
+    user = _require_login(request)
+    deleted = await asyncio.to_thread(db.delete_favorite, user["id"], favorite_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="指定されたお気に入りが見つからないか、削除する権限がありません。")
+    return {"status": "ok"}
+ 
+ 
+# ------------------------------------------------------------------
+# フロントエンド（login.html / intoro.html / app.js / style.css）を同じサービスから配信する。
 # バックエンドAPIとフロントエンドを別々にデプロイすると、フロントエンドが
 # 「どのURLのAPIを呼べばいいか」を知る必要が出てCORSやURL管理が煩雑になるため、
 # この1つのFastAPIサービスだけで両方まとめて配信する構成にしている。
+#
+# 「ページを開いた最初にログインページにして、そこからアプリを使えるようにしたい」という
+# 要望に対応し、"/" はログイン状態を見て出し分ける。未ログインならlogin.html（Googleログイン
+# ボタンのみの単独ページ）、ログイン済みならこれまで通りintoro.html（アプリ本体）を返す。
+# 以前は「/favorites等のAPIだけ401」で、アプリ本体（intoro.html）自体は未ログインでも
+# 誰でも開けたが、今回のご要望でページの入り口自体をログイン必須にする形へ変更した。
+# なお診断・旅程生成などのAPIエンドポイント自体には引き続きログイン必須化はしていない
+# （UIからしか事実上たどり着けないため）。API単体にも認証を必須にしたい場合は別途対応する。
 # ------------------------------------------------------------------
 @app.get("/")
-async def root():
+async def root(request: Request):
+    if not _current_session_user(request):
+        return FileResponse("login.html")
     return FileResponse("intoro.html")
+ 
+ 
+@app.get("/login.html")
+async def serve_login_html():
+    return FileResponse("login.html")
  
  
 @app.get("/app.js")
@@ -91,18 +288,10 @@ async def version():
 # ------------------------------------------------------------------
 # 口コミ・評価の収集（★評価＋自由記述の口コミを、今後のデータ活用のために永続化する）。
 #
-# これまで#review-sectionの「評価を送信」ボタンはalert()を出すだけで、実際には
-# どこにも保存していなかった（送信したつもりが何も記録されていなかった）。
-# 本アプリはまだ本格的なデータベースを持たないため、まずは最小構成として
-# JSON Lines形式のファイルに1件1行で追記する方式にした。Renderの無料プランは
-# ディスクが揮発性（再起動・再デプロイでリセットされる）なので、本格的に
-# 「今後のデータ」として蓄積・分析していくフェーズになったら、Render上の
-# 無料PostgresやSQLiteなど永続ディスクを使うDBへ移行することを推奨する。
+# 以前はJSON Linesファイルへの追記だったが、Googleログイン導入にあわせて
+# 「誰の口コミか」を紐付けられるよう db.py（SQLite）へ移行した。ログインしていない
+# 利用者の口コミも引き続き受け付ける（user_idがNULLの匿名レコードとして保存）。
 # ------------------------------------------------------------------
-REVIEWS_FILE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "reviews.jsonl")
-_reviews_file_lock = asyncio.Lock()
- 
- 
 class ReviewSubmission(BaseModel):
     rating: int                              # 1〜5の★評価（必須）
     review_text: Optional[str] = ""          # 自由記述の口コミ（任意）
@@ -116,12 +305,13 @@ class ReviewSubmission(BaseModel):
  
  
 @app.post("/submit_review")
-async def submit_review(review: ReviewSubmission):
+async def submit_review(request: Request, review: ReviewSubmission):
     if review.rating < 1 or review.rating > 5:
         raise HTTPException(status_code=400, detail="評価は1〜5の範囲で指定してください。")
  
+    user = _current_session_user(request)
     record = {
-        "submitted_at": datetime.now(timezone.utc).isoformat(),
+        "user_id": user["id"] if user else None,
         "rating": review.rating,
         "review_text": (review.review_text or "").strip(),
         "final_destination": review.final_destination or "",
@@ -134,10 +324,7 @@ async def submit_review(review: ReviewSubmission):
     }
  
     try:
-        # 複数リクエストが同時に来てファイル書き込みが競合し、行が壊れるのを防ぐためロックする。
-        async with _reviews_file_lock:
-            with open(REVIEWS_FILE_PATH, "a", encoding="utf-8") as f:
-                f.write(json.dumps(record, ensure_ascii=False) + "\n")
+        await asyncio.to_thread(db.add_review, record)
     except Exception as e:
         print(f"[submit_review] 保存に失敗しました: {e}")
         raise HTTPException(status_code=500, detail="評価の保存中にエラーが発生しました。")
@@ -146,31 +333,10 @@ async def submit_review(review: ReviewSubmission):
  
  
 @app.get("/reviews_summary")
-async def reviews_summary():
+async def reviews_summary_endpoint():
     """蓄積された口コミ・評価の簡易集計。今後のデータ活用の第一歩として、
     件数と平均評価だけをまず確認できるようにしている。"""
-    if not os.path.exists(REVIEWS_FILE_PATH):
-        return {"count": 0, "average_rating": None}
- 
-    count = 0
-    total = 0
-    async with _reviews_file_lock:
-        with open(REVIEWS_FILE_PATH, "r", encoding="utf-8") as f:
-            for line in f:
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    rec = json.loads(line)
-                    total += rec.get("rating", 0)
-                    count += 1
-                except json.JSONDecodeError:
-                    continue
- 
-    return {
-        "count": count,
-        "average_rating": round(total / count, 2) if count > 0 else None,
-    }
+    return await asyncio.to_thread(db.reviews_summary)
  
  
 class DiagnoseRequest(BaseModel):

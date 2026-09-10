@@ -9,6 +9,8 @@ let mainPeakPlace = null;    // 選択したメインピーク（式7・8のτ^p
 // 以前は経由地は完全に手動入力のみだったが、しおりは最初から経由地込みで自動提案し、
 // そこから自分で削除（不要なら✕で外す）できるようにする。
 let autoWaypoints = [];
+let currentUser = null;      // Googleログイン中のユーザー情報（未ログインならnull）
+let favoritesCache = [];     // 直近にloadFavoritesで取得した一覧（ローカル/アカウント共通の正規化済み配列）
  
 // ローカル開発時（intoro.htmlをLive Server等で127.0.0.1:5500のような別ポートから開き、
 // バックエンドをlocalhost:8000で別プロセス起動している場合）はlocalhost:8000を直接叩く。
@@ -86,8 +88,83 @@ document.addEventListener('DOMContentLoaded', () => {
     // 星評価UI
     initStarRating();
  
-    loadFavorites();
+    // お気に入り一覧のイベント委譲（表示・削除）。ログイン中はアカウント（サーバー側DB）、
+    // 未ログイン時はこの端末のlocalStorageのどちらを操作するかをここで振り分ける。
+    document.getElementById('favorites-list')?.addEventListener('click', async (e) => {
+        const restoreBtn = e.target.closest('.btn-restore-fav');
+        if (restoreBtn) {
+            const fav = favoritesCache.find(f => String(f.id) === String(restoreBtn.dataset.id));
+            if (fav) {
+                lastGeneratedItineraryData = fav.data;
+                renderItinerary(fav.data, fav.data.start_location || '');
+                renderDroppedNotice(fav.data.dropped_names);
+                const outputSection = document.getElementById('output-section');
+                if (outputSection) {
+                    outputSection.style.display = 'block';
+                    outputSection.scrollIntoView({ behavior: 'smooth' });
+                }
+            }
+            return;
+        }
+ 
+        const removeBtn = e.target.closest('.btn-remove-fav');
+        if (removeBtn) {
+            if (!confirm('このお気に入りを削除しますか？')) return;
+            const id = removeBtn.dataset.id;
+            if (currentUser) {
+                try {
+                    const res = await fetch(`${API_BASE_URL}/favorites/${id}`, { method: 'DELETE' });
+                    if (!res.ok) throw new Error('削除に失敗しました。');
+                } catch (err) {
+                    console.error(err);
+                    alert(err?.message || '削除中にエラーが発生しました。');
+                    return;
+                }
+            } else {
+                const favs = JSON.parse(localStorage.getItem('my_favorite_itineraries') || '[]');
+                favs.splice(Number(id), 1);
+                localStorage.setItem('my_favorite_itineraries', JSON.stringify(favs));
+            }
+            loadFavorites();
+        }
+    });
+ 
+    // ログイン状態を確認してヘッダーの表示を切り替え、その結果に応じてお気に入りを
+    // アカウント（サーバー）かこの端末（localStorage）のどちらから読み込むか決める。
+    checkLoginState();
 });
+ 
+/* --- Googleログイン --- */
+async function checkLoginState() {
+    try {
+        const res = await fetch(`${API_BASE_URL}/auth/me`, { credentials: 'include' });
+        if (res.ok) {
+            const data = await res.json();
+            currentUser = data.logged_in ? data.user : null;
+        } else {
+            currentUser = null;
+        }
+    } catch (err) {
+        console.error(err);
+        currentUser = null;
+    }
+    renderAuthUI();
+    loadFavorites();
+}
+ 
+function renderAuthUI() {
+    const area = document.getElementById('auth-area');
+    if (!area) return;
+    if (currentUser) {
+        area.innerHTML = `
+            ${currentUser.picture ? `<img src="${currentUser.picture}" alt="" style="width:28px; height:28px; border-radius:50%; vertical-align:middle; margin-right:6px;">` : ''}
+            <span style="font-weight:bold; font-size:0.9rem;">${escapeHtml(currentUser.name || currentUser.email || 'ログイン中')}</span>
+            <a href="${API_BASE_URL}/auth/logout" style="font-size:0.85rem; color:#64748b; margin-left:10px;">ログアウト</a>
+        `;
+    } else {
+        area.innerHTML = `<a href="${API_BASE_URL}/auth/login" class="btn-google-login">🔐 Googleでログイン</a>`;
+    }
+}
  
 /* --- 経由地タグの操作 --- */
 function addCustomWaypoint() {
@@ -639,6 +716,7 @@ function initStarRating() {
             const res = await fetch(`${API_BASE_URL}/submit_review`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',  // ログイン中ならセッションCookieを送り、口コミをアカウントに紐付ける
                 body: JSON.stringify(payload)
             });
             if (!res.ok) {
@@ -664,34 +742,82 @@ function initStarRating() {
     });
 }
  
-/* --- お気に入り機能 --- */
-function saveToFavorites() {
+/* --- お気に入り機能 ---
+   Googleログイン中はアカウント（サーバー側DB）に保存し、他の端末からも同じ一覧が見られる。
+   未ログイン時は従来通りこの端末のlocalStorageのみに保存する（ログインは必須にしない）。 */
+async function saveToFavorites() {
     if (!lastGeneratedItineraryData) return;
-    const favs = JSON.parse(localStorage.getItem('my_favorite_itineraries') || '[]');
     const area = document.getElementById('target-area')?.value?.trim() || lastGeneratedItineraryData.final_destination || '旅程';
     const startTime = document.getElementById('start-time')?.value || '09:00';
     const title = `${area} 旅程 (${startTime}発)`;
+    // renderItinerary()はGoogleマップ連携等にstart_locationを使うため、復元時にも使えるよう
+    // 保存データに含めておく（以前はこれが無く、お気に入りから復元する機能自体が未実装だった）。
+    const startLocation = document.getElementById('start-location')?.value?.trim() || '';
+    const favoriteData = { ...lastGeneratedItineraryData, start_location: startLocation };
  
-    favs.push({ title, date: '2026/8/7', data: lastGeneratedItineraryData });
-    localStorage.setItem('my_favorite_itineraries', JSON.stringify(favs));
-    alert('⭐ この旅程をお気に入りに保存しました！');
+    if (currentUser) {
+        try {
+            const res = await fetch(`${API_BASE_URL}/favorites`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
+                body: JSON.stringify({ title, data: favoriteData })
+            });
+            if (!res.ok) throw new Error('お気に入りの保存に失敗しました。');
+            alert('⭐ この旅程をお気に入りに保存しました！（アカウントに保存、他の端末からも見られます）');
+        } catch (err) {
+            console.error(err);
+            alert(err?.message || 'お気に入りの保存中にエラーが発生しました。');
+            return;
+        }
+    } else {
+        const favs = JSON.parse(localStorage.getItem('my_favorite_itineraries') || '[]');
+        favs.push({ title, date: new Date().toLocaleDateString('ja-JP'), data: favoriteData });
+        localStorage.setItem('my_favorite_itineraries', JSON.stringify(favs));
+        alert('⭐ この旅程をお気に入りに保存しました！（この端末のみ。Googleでログインするとアカウントに保存され、他の端末からも見られるようになります）');
+    }
     loadFavorites();
 }
  
-function loadFavorites() {
-    const favs = JSON.parse(localStorage.getItem('my_favorite_itineraries') || '[]');
+async function loadFavorites() {
     const container = document.getElementById('favorites-list');
     if (!container) return;
  
-    container.innerHTML = favs.map((f, i) => `
+    if (currentUser) {
+        try {
+            const res = await fetch(`${API_BASE_URL}/favorites`, { credentials: 'include' });
+            if (!res.ok) throw new Error('failed');
+            const body = await res.json();
+            favoritesCache = (body.favorites || []).map(f => ({
+                id: f.id,
+                title: f.title,
+                date: (f.created_at || '').slice(0, 10) || '-',
+                data: f.data
+            }));
+        } catch (err) {
+            console.error(err);
+            container.innerHTML = '<p style="color:#94a3b8; font-size:0.9rem;">お気に入りの読み込みに失敗しました。</p>';
+            return;
+        }
+    } else {
+        const favs = JSON.parse(localStorage.getItem('my_favorite_itineraries') || '[]');
+        favoritesCache = favs.map((f, i) => ({ id: i, title: f.title, date: f.date, data: f.data }));
+    }
+ 
+    if (favoritesCache.length === 0) {
+        container.innerHTML = '<p style="color:#94a3b8; font-size:0.9rem;">保存されたお気に入りはまだありません。</p>';
+        return;
+    }
+ 
+    container.innerHTML = favoritesCache.map((f) => `
         <div style="background:#f8fafc; padding:10px 14px; border-radius:8px; border:1px solid #e2e8f0; margin-bottom:8px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
             <div>
                 <strong>${escapeHtml(f.title)}</strong>
-                <span style="color:#64748b; font-size:0.8rem; display:block;">保存日: ${f.date}</span>
+                <span style="color:#64748b; font-size:0.8rem; display:block;">保存日: ${escapeHtml(f.date)}</span>
             </div>
             <div style="display:flex; gap:6px;">
-                <button type="button" class="btn-restore-fav" data-index="${i}" style="background:#2563eb; color:white; border:none; border-radius:4px; padding:6px 12px; font-weight:bold; cursor:pointer; font-size:0.85rem;">📂 このしおりを表示</button>
-                <button type="button" class="btn-remove-fav" data-index="${i}" style="background:#ef4444; color:white; border:none; border-radius:4px; padding:6px 10px; cursor:pointer; font-size:0.85rem;">削除</button>
+                <button type="button" class="btn-restore-fav" data-id="${f.id}" style="background:#2563eb; color:white; border:none; border-radius:4px; padding:6px 12px; font-weight:bold; cursor:pointer; font-size:0.85rem;">📂 このしおりを表示</button>
+                <button type="button" class="btn-remove-fav" data-id="${f.id}" style="background:#ef4444; color:white; border:none; border-radius:4px; padding:6px 10px; cursor:pointer; font-size:0.85rem;">削除</button>
             </div>
         </div>
     `).join('');

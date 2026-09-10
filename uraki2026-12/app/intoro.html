@@ -131,12 +131,17 @@
         /* 口コミ評価（星） */
         #star-rating span { color: #cbd5e1; transition: color 0.15s; }
         #star-rating span.active { color: #f59e0b; }
+ 
+        /* Googleログイン */
+        .btn-google-login { display:inline-block; background:#fff; color:#3c4043; border:1px solid #dadce0; border-radius:6px; padding:6px 14px; font-weight:bold; font-size:0.85rem; text-decoration:none; }
+        .btn-google-login:hover { background:#f8f9fa; }
     </style>
 </head>
 <body>
  
 <div class="container">
     <header>
+        <div id="auth-area" style="text-align:right; margin-bottom:8px; min-height:28px;"></div>
         <h1>タビッグ</h1>
         <p class="subtitle">旅行先を一発で決める</p>
     </header>
@@ -356,6 +361,6 @@
     </div>
 </div>
  
-<script src="app.js?v=20260910b"></script>
+<script src="app.js?v=20260910c"></script>
 </body>
 </html>
