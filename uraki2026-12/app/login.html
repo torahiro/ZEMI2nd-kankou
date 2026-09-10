@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>タビッグ｜ログイン</title>
+<!-- 開発中の更新がブラウザキャッシュに阻まれて反映されない事故が何度もあったため、
+     アプリ本体(intoro.html)と同様にキャッシュを無効化しておく。 -->
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
+<style>
+    body { font-family: sans-serif; background: #f4f7f9; color: #333; margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 20px; box-sizing: border-box; }
+    .login-card { background: white; padding: 40px 36px; border-radius: 14px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); max-width: 380px; width: 100%; text-align: center; }
+    h1 { color: #1e3a8a; font-size: 2rem; margin: 0 0 4px; }
+    .subtitle { color: #64748b; font-size: 0.95rem; margin: 0 0 28px; }
+    .lead-text { font-size: 0.9rem; color: #475569; margin-bottom: 28px; line-height: 1.6; }
+    .btn-google-login { display: flex; align-items: center; justify-content: center; gap: 10px; background: #fff; color: #3c4043; border: 1px solid #dadce0; border-radius: 8px; padding: 12px 20px; font-weight: bold; font-size: 0.95rem; text-decoration: none; transition: background 0.15s, box-shadow 0.15s; }
+    .btn-google-login:hover { background: #f8f9fa; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+    .google-g { width: 20px; height: 20px; flex-shrink: 0; }
+    .error-box { background: #fee2e2; color: #b91c1c; border-radius: 8px; padding: 10px 14px; font-size: 0.85rem; margin-bottom: 20px; text-align: left; }
+    .footnote { color: #94a3b8; font-size: 0.75rem; margin-top: 24px; }
+ 
+    /* ユーザー名・パスワード認証（Googleログインとの区切り線・フォーム） */
+    .divider { display: flex; align-items: center; gap: 10px; margin: 22px 0; color: #94a3b8; font-size: 0.8rem; }
+    .divider::before, .divider::after { content: ''; flex: 1; height: 1px; background: #e2e8f0; }
+    #local-auth-form { text-align: left; }
+    #local-auth-form label { display: block; font-weight: bold; font-size: 0.85rem; margin: 12px 0 4px; color: #475569; }
+    #local-auth-form input { width: 100%; padding: 10px 12px; border: 1px solid #e2e8f0; border-radius: 8px; font-size: 0.95rem; box-sizing: border-box; }
+    #local-auth-form input:focus { outline: none; border-color: #2563eb; }
+    #local-auth-submit { width: 100%; margin-top: 16px; background: #2563eb; color: white; border: none; padding: 12px; border-radius: 8px; font-weight: bold; font-size: 0.95rem; cursor: pointer; }
+    #local-auth-submit:hover { background: #1d4ed8; }
+    .switch-mode { margin-top: 14px; font-size: 0.85rem; color: #64748b; }
+    .switch-mode a { color: #2563eb; font-weight: bold; text-decoration: none; margin-left: 4px; cursor: pointer; }
+    .switch-mode a:hover { text-decoration: underline; }
+</style>
+</head>
+<body>
+    <div class="login-card">
+        <h1>タビッグ</h1>
+        <p class="subtitle">旅行先を一発で決める</p>
+        <p class="lead-text">専用アカウントでログインすると、お気に入りの旅程や口コミがアカウントに保存されます。</p>
+ 
+        <div id="login-error" class="error-box" style="display:none;"></div>
+ 
+        <div class="divider">入力画面</div>
+ 
+        <!-- Google Cloud ConsoleでのOAuth設定が不要な、ユーザー名・パスワードによる
+             シンプルな自前認証。同じログインフォームで「ログイン」と「新規登録」を
+             切り替えられるようにし、専用の登録ページを別途作らずに済ませている。 -->
+        <form id="local-auth-form">
+            <label for="username">ユーザー名</label>
+            <input type="text" id="username" required minlength="3" autocomplete="username">
+            <label for="password">パスワード</label>
+            <input type="password" id="password" required minlength="8" autocomplete="current-password">
+            <button type="submit" id="local-auth-submit">ログイン</button>
+        </form>
+        <div class="switch-mode">
+            <span id="mode-text">アカウントをお持ちでない方は</span><a href="#" id="toggle-mode">新規登録</a>
+        </div>
+ 
+        <p class="footnote">ログインすると、当サービスの利用状況に関するデータが今後の改善に活用されます。</p>
+    </div>
+ 
+    <script>
+        // /auth/callback が失敗した場合など、?error=... 付きでこのページへ戻ってくるケースに備える。
+        const errorBox = document.getElementById('login-error');
+        const params = new URLSearchParams(location.search);
+        const err = params.get('error');
+        if (err) {
+            errorBox.textContent = err === 'config'
+                ? 'Googleログインがまだ設定されていません（サーバー管理者向け: GOOGLE_OAUTH_CLIENT_ID / GOOGLE_OAUTH_CLIENT_SECRET を設定してください）。'
+                : 'ログインに失敗しました。もう一度お試しください。';
+            errorBox.style.display = 'block';
+        }
+ 
+        // ユーザー名・パスワード認証：1つのフォームを「ログイン」⇔「新規登録」で切り替える。
+        let isSignup = false;
+        const form = document.getElementById('local-auth-form');
+        const submitBtn = document.getElementById('local-auth-submit');
+        const toggleLink = document.getElementById('toggle-mode');
+        const modeText = document.getElementById('mode-text');
+        const passwordInput = document.getElementById('password');
+ 
+        toggleLink.addEventListener('click', (e) => {
+            e.preventDefault();
+            isSignup = !isSignup;
+            submitBtn.textContent = isSignup ? '新規登録' : 'ログイン';
+            modeText.textContent = isSignup ? 'すでにアカウントをお持ちの方は' : 'アカウントをお持ちでない方は';
+            toggleLink.textContent = isSignup ? 'ログイン' : '新規登録';
+            passwordInput.autocomplete = isSignup ? 'new-password' : 'current-password';
+            errorBox.style.display = 'none';
+        });
+ 
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const username = document.getElementById('username').value.trim();
+            const password = passwordInput.value;
+            const endpoint = isSignup ? '/auth/local/signup' : '/auth/local/login';
+ 
+            submitBtn.disabled = true;
+            errorBox.style.display = 'none';
+            try {
+                const res = await fetch(endpoint, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'include',  // セッションCookieを受け取るために必須
+                    body: JSON.stringify({ username, password })
+                });
+                if (!res.ok) {
+                    let detail = 'エラーが発生しました。もう一度お試しください。';
+                    try {
+                        const body = await res.json();
+                        if (body?.detail) detail = body.detail;
+                    } catch (_) { /* JSONでなければ既定メッセージのまま */ }
+                    errorBox.textContent = detail;
+                    errorBox.style.display = 'block';
+                    return;
+                }
+                // ログイン/新規登録に成功したら、"/" へ移動する（サーバー側がログイン状態を
+                // 見てintoro.htmlを返すようになる）。
+                location.href = '/';
+            } catch (err2) {
+                console.error(err2);
+                errorBox.textContent = '通信エラーが発生しました。もう一度お試しください。';
+                errorBox.style.display = 'block';
+            } finally {
+                submitBtn.disabled = false;
+            }
+        });
+    </script>
+</body>
+</html>
+ 
