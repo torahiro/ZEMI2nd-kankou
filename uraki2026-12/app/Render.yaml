@@ -1,0 +1,32 @@
+# Renderの「Blueprint」機能用の設定ファイル。
+# GitHubリポジトリのルートにこのファイルを置いた状態でRenderの
+# 「New +」→「Blueprint」からこのリポジトリを選ぶと、下記の内容を
+# ダッシュボードで手入力しなくても自動的にWebサービスが作成されます。
+# （このファイルを使わず、通常の「New +」→「Web Service」で手動設定しても構いません）
+services:
+  - type: web
+    name: tabigg-api
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    # --proxy-headers を付けないと、Render経由（TLS終端はRenderが担い、コンテナへはHTTPで
+    # 転送される）のリクエストでX-Forwarded-Protoが信用されず、Googleログインのredirect_uriが
+    # httpのまま組み立てられて「redirect_uri_mismatch」エラーになる。
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT --proxy-headers --forwarded-allow-ips='*'
+    autoDeploy: true
+    envVars:
+      # 任意。設定しない場合はOpenStreetMap（Overpass API）のみでスポットを取得します。
+      - key: GOOGLE_MAPS_API_KEY
+        sync: false
+      - key: TRIPADVISOR_API_KEY
+        sync: false
+      # ログインセッションのCookie署名鍵。固定値を設定しないと再起動のたびに全員ログアウトされる。
+      # 例: python3 -c "import secrets; print(secrets.token_urlsafe(32))" で生成した値を設定する。
+      - key: SESSION_SECRET_KEY
+        sync: false
+      # GoogleログインのOAuthクライアント情報。Google Cloud Consoleで発行する。
+      # 未設定でもアプリ自体は動作し、ログイン機能だけが無効になる。
+      - key: GOOGLE_OAUTH_CLIENT_ID
+        sync: false
+      - key: GOOGLE_OAUTH_CLIENT_SECRET
+        sync: false
