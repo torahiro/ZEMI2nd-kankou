@@ -241,8 +241,6 @@
     <div class="card">
         <div class="section-title">3. 旅の気分・動機（自然言語解析）</div>
         <textarea id="user-text-intent" class="textarea-input" rows="2" placeholder="例：美味しい海鮮を食べて温泉でゆっくり日頃の疲れを癒やしたい。"></textarea>
-        <label style="font-weight:bold; display:block; margin-top:10px; margin-bottom:5px;">🗣️ 参考口コミ・自作感想文 (任意):</label>
-        <textarea id="custom-reviews-text" class="textarea-input" rows="2" placeholder="例：彫刻の森美術館の景色がきれいだった。"></textarea>
     </div>
  
     <!-- 4. 10項目こだわり -->
@@ -340,12 +338,14 @@
         </div>
     </div>
  
-    <!-- 8. 口コミ評価 -->
+    <!-- 8. 口コミ評価（★評価＋口コミ本文。今後のデータ活用のためサーバー側に保存される） -->
     <div class="card" id="review-section" style="display:none;">
         <div class="section-title">📝 この旅程プランを評価する</div>
         <div id="star-rating" style="font-size:1.6rem; cursor:pointer; letter-spacing:4px;">
             <span data-v="1">☆</span><span data-v="2">☆</span><span data-v="3">☆</span><span data-v="4">☆</span><span data-v="5">☆</span>
         </div>
+        <label style="font-weight:bold; display:block; margin-top:15px; margin-bottom:5px;">🗣️ 口コミ・感想（任意・今後の改善に活用されます）:</label>
+        <textarea id="review-text" class="textarea-input" rows="3" placeholder="例：想定より移動時間が短く、余裕を持って回れました。"></textarea>
         <button type="button" id="btn-submit-review" class="btn-primary" style="margin-top:15px; max-width:220px;">評価を送信</button>
     </div>
  
@@ -356,6 +356,6 @@
     </div>
 </div>
  
-<script src="app.js?v=20260910a"></script>
+<script src="app.js?v=20260910b"></script>
 </body>
 </html>

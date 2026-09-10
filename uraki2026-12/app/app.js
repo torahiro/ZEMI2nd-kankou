@@ -611,12 +611,56 @@ function initStarRating() {
         }
     });
  
-    document.getElementById('btn-submit-review')?.addEventListener('click', () => {
+    const btnSubmitReview = document.getElementById('btn-submit-review');
+    btnSubmitReview?.addEventListener('click', async () => {
         if (selectedStar === 0) {
             alert("評価を選択してください。");
             return;
         }
-        alert("評価を送信しました。ご協力ありがとうございます。");
+ 
+        // 今後のデータ活用のため、★評価と口コミ本文に加えて、どの旅程に対する評価かが
+        // 後から分かるよう、直近に生成した旅程の要約情報も一緒に送る。
+        const reviewText = document.getElementById('review-text')?.value?.trim() || '';
+        const metrics = lastGeneratedItineraryData?.metrics || {};
+        const payload = {
+            rating: selectedStar,
+            review_text: reviewText,
+            final_destination: lastGeneratedItineraryData?.final_destination || '',
+            start_location: document.getElementById('start-location')?.value?.trim() || '',
+            transport_mode: document.getElementById('transport-mode')?.value || '',
+            trip_type: lastGeneratedItineraryData?.trip_type || '',
+            member_count: lastGeneratedItineraryData?.member_count || null,
+            total_cost: metrics.total_cost ?? null,
+            total_time_minutes: metrics.total_time_minutes ?? null
+        };
+ 
+        if (btnSubmitReview) btnSubmitReview.disabled = true;
+        try {
+            const res = await fetch(`${API_BASE_URL}/submit_review`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            if (!res.ok) {
+                let detail = "評価の送信に失敗しました。";
+                try {
+                    const errBody = await res.json();
+                    if (errBody?.detail) detail = errBody.detail;
+                } catch (_) { /* JSONでなければ既定メッセージのまま */ }
+                throw new Error(detail);
+            }
+            alert("評価を送信しました。ご協力ありがとうございます。");
+            // 送信後はフォームをリセットし、二重送信で同じ内容が重複保存されるのを防ぐ
+            selectedStar = 0;
+            ratingBox.querySelectorAll('span').forEach(s => s.classList.remove('active'));
+            const reviewTextEl = document.getElementById('review-text');
+            if (reviewTextEl) reviewTextEl.value = '';
+        } catch (err) {
+            console.error(err);
+            alert(err?.message || "評価の送信中にエラーが発生しました。");
+        } finally {
+            if (btnSubmitReview) btnSubmitReview.disabled = false;
+        }
     });
 }
  
