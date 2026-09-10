@@ -10,7 +10,14 @@ let mainPeakPlace = null;    // 選択したメインピーク（式7・8のτ^p
 // そこから自分で削除（不要なら✕で外す）できるようにする。
 let autoWaypoints = [];
  
-const API_BASE_URL = 'http://localhost:8000';
+// ローカル開発時（intoro.htmlをLive Server等で127.0.0.1:5500のような別ポートから開き、
+// バックエンドをlocalhost:8000で別プロセス起動している場合）はlocalhost:8000を直接叩く。
+// デプロイ後（Render等でintoro.html/app.js自体もこのFastAPIサービスから配信される場合）は
+// フロントエンドとAPIが同じオリジンになるため、相対パス（空文字）でそのまま同じホストを叩けばよい。
+// これによりデプロイ先のURLをapp.js内にハードコードする必要がなくなる。
+const API_BASE_URL = (location.hostname === 'localhost' || location.hostname === '127.0.0.1')
+    ? 'http://localhost:8000'
+    : '';
  
 document.addEventListener('DOMContentLoaded', () => {
     // スライダー表示連動
@@ -508,6 +515,10 @@ function renderItinerary(data, startLoc) {
  
             const hoursWarning = item.hours_satisfied === false
                 ? '<span class="badge badge-warn">⚠️ 営業時間外の可能性</span>' : '';
+            // 営業時間がOSMの実データではなく種別からの推定値の場合、確信度が低いことを示す
+            // （実データが取れていれば hours_source は "osm" になる）。
+            const hoursEstimatedNote = item.hours_source && item.hours_source !== 'osm'
+                ? '<span class="badge badge-hours" title="実際の営業時間データが取得できなかったため、種別からの推定値を使用しています">営業時間は推定値</span>' : '';
  
             spotDiv.innerHTML = `
                 <div class="tl-time">${startTimeStr}</div>
@@ -519,6 +530,7 @@ function renderItinerary(data, startLoc) {
                             ${item.is_peak ? '<span class="badge badge-peak">メインピーク</span>' : '<span class="badge badge-circuit">周遊</span>'}
                             ${isCustomWp ? '<span class="badge badge-custom">追加スポット</span>' : ''}
                             ${hoursWarning}
+                            ${hoursEstimatedNote}
                         </span>
                     </div>
                     <div class="tl-card-sub">滞在時間 約${item.stay_minutes}分（〜${endTimeStr}）</div>

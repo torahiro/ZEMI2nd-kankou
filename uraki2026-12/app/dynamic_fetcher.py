@@ -1,5 +1,6 @@
 # dynamic_fetcher.py
 import os
+import re
 import httpx
 from typing import List, Dict, Any
  
@@ -39,6 +40,51 @@ def _default_hours(types):
     if "spa" in types:
         return (DEFAULT_OPEN_HOUR, 22)
     return (DEFAULT_OPEN_HOUR, 17)
+ 
+ 
+def _parse_osm_opening_hours(opening_hours_str: str, fallback_open: float, fallback_close: float):
+    """
+    OSM(Overpass)のopening_hoursタグ（例:"Mo-Fr 09:00-18:00", "09:00-21:00", "24/7"）から、
+    一日の代表的な営業時間帯を抽出する簡易パーサー。
+ 
+    OSMのopening_hours構文は曜日別・特例日・休憩時間・注記など非常に複雑な文法を持つが、
+    本アプリのcheck_open_hours()自体が曜日を区別しない設計（同日の旅程内でopen_hour/close_hour
+    を1組しか持たない）のため、曜日別の精密なパースをしても活かせない。そのため本関数では
+    「HH:MM-HH:MM」形式の時刻レンジをすべて拾い、その中で最も広い（最も早い開店〜最も遅い閉店）
+    範囲を代表値として採用するに留める。パースできない、あるいは"off"/"closed"のみの記述しか
+    無い場合は、種別ベースのデフォルト値にフォールバックする（=精度は変わらないが、実データが
+    ある場合にそれを活かせるようにするための最小限の改善）。
+ 
+    戻り値: (open_hour, close_hour, データがOSM実データ由来かどうかを示すbool)
+    """
+    if not opening_hours_str:
+        return fallback_open, fallback_close, False
+ 
+    s = opening_hours_str.strip()
+    if s in ("24/7",):
+        return 0.0, 24.0, True
+ 
+    ranges = re.findall(r'(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})', s)
+    if not ranges:
+        # "off"/"closed"のみの記述や、パーサーが対応していない特殊構文はフォールバックに委ねる
+        return fallback_open, fallback_close, False
+ 
+    open_candidates = []
+    close_candidates = []
+    for oh, om, ch, cm in ranges:
+        open_candidates.append(int(oh) + int(om) / 60.0)
+        close_val = int(ch) + int(cm) / 60.0
+        if close_val <= 0:
+            close_val = 24.0  # "-00:00"のような深夜0時までの表記を24時として扱う
+        close_candidates.append(close_val)
+ 
+    open_hour = min(open_candidates)
+    close_hour = max(close_candidates)
+    if close_hour <= open_hour:
+        # 深夜営業等でここまでの単純ロジックでは不自然な結果になった場合は信頼しない
+        return fallback_open, fallback_close, False
+ 
+    return open_hour, close_hour, True
  
 def _map_google_types(g_types: List[str]) -> List[str]:
     """Google Places の types 配列を、本アプリの3分類 (tourist_attraction/restaurant/spa) へ正規化する"""
@@ -87,7 +133,10 @@ async def _fetch_from_google_places(target_area: str) -> List[Dict[str, Any]]:
             "lon": loc.get("lng"),
             "price_level": min(3, max(1, item.get("price_level", 2))),
             "open_hour": open_hour,
-            "close_hour": close_hour
+            "close_hour": close_hour,
+            # Text Searchのレスポンスには週次の営業時間が含まれない（別途Place Detailsが必要で
+            # 無料枠消費を増やすため未実装）ため、常に種別からの推定値になる。
+            "hours_source": "default"
         })
     return results
  
@@ -165,6 +214,9 @@ async def _fetch_from_tripadvisor(target_area: str) -> List[Dict[str, Any]]:
                     "price_level": 2,
                     "open_hour": open_hour,
                     "close_hour": close_hour,
+                    # TripAdvisor nearby_searchも無料枠消費を抑えるため営業時間の詳細取得(Location
+                    # Details)は行っておらず、常に種別からの推定値になる。
+                    "hours_source": "default"
                 })
  
     return results[:MAX_POI_RESULTS]
@@ -255,7 +307,10 @@ async def fetch_places_dynamically(target_area: str) -> List[Dict[str, Any]]:
             if not types:
                 types.append("tourist_attraction")
  
-            open_hour, close_hour = _default_hours(types)
+            fallback_open, fallback_close = _default_hours(types)
+            open_hour, close_hour, hours_from_osm = _parse_osm_opening_hours(
+                tags.get("opening_hours"), fallback_open, fallback_close
+            )
             osm_results.append({
                 "name": name,
                 "keyword": target_area,
@@ -264,7 +319,9 @@ async def fetch_places_dynamically(target_area: str) -> List[Dict[str, Any]]:
                 "lon": elem.get("lon"),
                 "price_level": 2,
                 "open_hour": open_hour,
-                "close_hour": close_hour
+                "close_hour": close_hour,
+                # "osm"=OSMのopening_hoursタグを実際にパースできた／"default"=種別からの推定値
+                "hours_source": "osm" if hours_from_osm else "default"
             })
  
     # TripAdvisorは「OSMの件数が足りない時だけ」ではなく、キーが設定されていれば常時マージする。
@@ -299,6 +356,7 @@ async def fetch_places_dynamically(target_area: str) -> List[Dict[str, Any]]:
     ]
     for place in fallback:
         place["open_hour"], place["close_hour"] = _default_hours(place["types"])
+        place["hours_source"] = "default"  # テンプレ名の架空候補のため常に推定値
  
     if combined:
         # 実データが1〜2件でもゼロにはせず、不足分だけテンプレ候補で補って多様性を確保する
